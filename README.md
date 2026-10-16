@@ -2,6 +2,8 @@
 
 原生飞牛 fnOS FPK：集成 Aria2 Core、Go 管理器和 AriaNg。当前 x86_64 候选包为
 `0.1.96`，运行时不依赖 Docker、Node.js、Python 或数据库，也不再依赖宿主的任何共享库。
+<img width="1457" height="834" alt="image" src="https://github.com/user-attachments/assets/68ca58a0-fc10-49b2-8f98-5411c29b79de" />
+
 
 ## 项目理解
 
