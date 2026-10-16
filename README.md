@@ -94,3 +94,6 @@
 基本设置页移除（`0.2.2`）、归档目录创建失败时降级而非阻塞保存（`0.2.1`）、连接提示与安装
 向导文案统一为「Aria2」（`0.2.3`）。完整版本历史、产物指纹与逐文件溯源清单见
 [候选发布物](docs/release-candidate.md)。
+
+ARM64 (aarch64) 版本支持已加入：Go 管理器已交叉编译验证，`aria2c` 静态核心由 GitHub Actions
+构建。详见 [候选发布物 ARM64 段落](docs/release-candidate.md#arm64-aarch64-版本实验性未设备验收)。

@@ -1,0 +1,111 @@
+# Build static aria2c binaries for both x86_64 and aarch64 (ARM64).
+# Uses Alpine Linux containers with musl static linking.
+# Produces aria2c binaries as GitHub Actions artifacts.
+#
+# The build recipe is in build-inputs/container-build-static.sh.
+# Source tarball and patches are downloaded from upstream and verified via SHA256SUMS.
+name: Build Static Core
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'Target architecture (amd64 or arm64 or both)'
+        required: false
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - amd64
+          - arm64
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build aria2c (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout
+        if: github.event.inputs.arch == 'both' || github.event.inputs.arch == matrix.arch
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for arm64
+        if: matrix.arch == 'arm64' && (github.event.inputs.arch == 'both' || github.event.inputs.arch == 'arm64')
+        uses: docker/setup-qemu-action@v3
+
+      - name: Download aria2 source
+        if: github.event.inputs.arch == 'both' || github.event.inputs.arch == matrix.arch
+        run: |
+          mkdir -p /tmp/inputs/patch
+          # Download aria2 1.36.0 official release tarball
+          curl -fSL -o /tmp/inputs/aria2-release-1.36.0.tar.gz \
+            https://github.com/aria2/aria2/releases/download/release-1.36.0/aria2-1.36.0.tar.gz
+
+          # Verify SHA-256
+          echo "782B5DAD48CB333E0CBEF8795F868F7963455EFECFD2A818FEB8DAB1CFA973F5  /tmp/inputs/aria2-release-1.36.0.tar.gz" | sha256sum -c -
+
+          # Copy patches and build script
+          cp build-inputs/patch/*.patch /tmp/inputs/patch/
+          cp build-inputs/container-build-static.sh /tmp/build.sh
+          cp build-inputs/SHA256SUMS /tmp/inputs/SHA256SUMS
+
+      - name: Build in Alpine container (${{ matrix.arch }})
+        if: github.event.inputs.arch == 'both' || github.event.inputs.arch == matrix.arch
+        run: |
+          docker run --rm \
+            --platform linux/${{ matrix.arch }} \
+            -v /tmp/inputs:/inputs:ro \
+            -v /tmp/build.sh:/build.sh:ro \
+            -v /tmp/out:/out \
+            alpine:3.22 \
+            sh /build.sh
+
+      - name: Verify output
+        if: github.event.inputs.arch == 'both' || github.event.inputs.arch == matrix.arch
+        run: |
+          echo "=== Build output ==="
+          ls -la /tmp/out/
+
+          echo "=== file ==="
+          file /tmp/out/aria2c
+
+          echo "=== ldd ==="
+          ldd /tmp/out/aria2c 2>&1 || true
+
+          echo "=== readelf -d ==="
+          readelf -d /tmp/out/aria2c 2>&1 || true
+
+          echo "=== sha256 ==="
+          sha256sum /tmp/out/aria2c
+
+          echo "=== version ==="
+          /tmp/out/aria2c --version || true
+
+          # Gate checks
+          if ! file /tmp/out/aria2c | grep -q "statically linked"; then
+            echo "FATAL: not statically linked"
+            exit 1
+          fi
+          if readelf -d /tmp/out/aria2c | grep -q "(NEEDED)"; then
+            echo "FATAL: has NEEDED dynamic dependencies"
+            exit 1
+          fi
+          echo "OK: static linking verified"
+
+      - name: Upload artifact
+        if: github.event.inputs.arch == 'both' || github.event.inputs.arch == matrix.arch
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria2c-${{ matrix.arch }}
+          path: |
+            /tmp/out/aria2c
+            /tmp/out/aria2c.file
+            /tmp/out/aria2c.ldd
+            /tmp/out/aria2c.readelf
+            /tmp/out/aria2c.sha256
+            /tmp/out/aria2c.version

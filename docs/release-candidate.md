@@ -241,3 +241,24 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 受本次事故影响的验证项：`startup-e2e-container.sh` 为 pid 属主新增的两条断言
 （`aria2.pid`/`manager.pid` 属主应为 `aria2`）**尚未在容器内跑过**，其余三条链路
 （含启动锁释放与 multicall 用例 E）在事故之前已全部通过。测试机恢复后需补跑。
+
+## ARM64 (aarch64) 版本（实验性，未设备验收）
+
+`0.2.3` 起新增 ARM64 构建支持。Go 管理器与回调用本机 Go 1.26.9 交叉编译
+（`GOOS=linux GOARCH=arm64 CGO_ENABLED=0`），产物已验证为 ELF aarch64：
+
+| 组件 | 大小 | SHA-256 |
+|---|---|---|
+| `aria2-manager` (arm64) | 9,734,536 B | `C32CB4025E576E7FEDD7C5D9E666A27D508E360B67E6D539A0D4252789DD7762` |
+| `aria2-hook` (arm64) | 3,307,012 B | `52B62393AC2B66B6E40480925357FFCBA540528B12A5B19108383617E38D6379` |
+| `aria2c` (arm64) | 待 CI 构建 | GitHub Actions workflow 产出 |
+
+ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中构建
+（`.github/workflows/build-static-core.yml`），使用与 x86_64 完全相同的源码、补丁和
+`container-build-static.sh` 配方。由于本机没有 Docker 或 WSL，无法本地构建。
+
+FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
+改 `manifest` 的 `platform = arm64`。待 CI 产出 `aria2c` 后，替换占位文件即可打包。
+
+**状态：实验性。** 未经任何 ARM 设备实机验证，仅供测试。待有 ARM fnOS NAS 后
+需完成与 x86 版相同的验收流程。

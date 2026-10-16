@@ -9,8 +9,10 @@ build-work/
 # Build output (generated per build, not source)
 build-output/
 
-# Build inputs (upstream source tarballs and patches — download separately)
-build-inputs/
+# Build inputs — upstream source tarballs excluded (CI downloads them),
+# but patches and checksums are tracked for reproducibility
+build-inputs/*.tar.gz
+build-inputs/container-build.sh
 
 # fnOS SDK tooling (large multi-platform binaries, not distributable)
 tools/skill/

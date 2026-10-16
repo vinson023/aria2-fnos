@@ -1,0 +1,158 @@
+# Assemble complete FPK packages for both x86_64 and aarch64 (ARM64).
+# This workflow:
+#   1. Builds static aria2c in Alpine containers (both architectures)
+#   2. Cross-compiles Go manager and hook (both architectures)
+#   3. Assembles FPK directories with correct binaries
+#   4. Produces aria2-x86.fpk and aria2-arm64.fpk artifacts
+#
+# Note: fnpack.exe is Windows-only. For CI we use a Go reimplementation
+#       or run fnpack under Wine. Until fnpack is portable, this workflow
+#       only assembles the FPK directory tree and leaves packaging to the
+#       developer (or a future native Linux packer).
+name: Build FPK (All Architectures)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-static-core:
+    name: Build aria2c (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU for arm64
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Download aria2 source
+        run: |
+          mkdir -p /tmp/inputs/patch
+          curl -fSL -o /tmp/inputs/aria2-release-1.36.0.tar.gz \
+            https://github.com/aria2/aria2/releases/download/release-1.36.0/aria2-1.36.0.tar.gz
+          echo "782B5DAD48CB333E0CBEF8795F868F7963455EFECFD2A818FEB8DAB1CFA973F5  /tmp/inputs/aria2-release-1.36.0.tar.gz" | sha256sum -c -
+          cp build-inputs/patch/*.patch /tmp/inputs/patch/
+          cp build-inputs/container-build-static.sh /tmp/build.sh
+          cp build-inputs/SHA256SUMS /tmp/inputs/SHA256SUMS
+
+      - name: Build in Alpine container
+        run: |
+          docker run --rm \
+            --platform linux/${{ matrix.arch }} \
+            -v /tmp/inputs:/inputs:ro \
+            -v /tmp/build.sh:/build.sh:ro \
+            -v /tmp/out:/out \
+            alpine:3.22 \
+            sh /build.sh
+
+      - name: Verify and gate
+        run: |
+          file /tmp/out/aria2c | grep -q "statically linked" || exit 1
+          ! readelf -d /tmp/out/aria2c | grep -q "(NEEDED)" || exit 1
+          echo "OK: static linking verified"
+
+      - name: Upload aria2c
+        uses: actions/upload-artifact@v4
+        with:
+          name: aria2c-${{ matrix.arch }}
+          path: /tmp/out/aria2c
+
+  build-go:
+    name: Build Go binaries (${{ matrix.goarch }})
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: manager/go.mod
+
+      - name: Cross-compile
+        working-directory: manager
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          go build -trimpath -o /tmp/aria2-manager-${{ matrix.goarch }} ./cmd/aria2-manager/
+          go build -trimpath -o /tmp/aria2-hook-${{ matrix.goarch }} ./cmd/aria2-hook/
+
+      - name: Upload Go binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries-${{ matrix.goarch }}
+          path: |
+            /tmp/aria2-manager-${{ matrix.goarch }}
+            /tmp/aria2-hook-${{ matrix.goarch }}
+
+  assemble:
+    name: Assemble FPK tree (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    needs: [build-static-core, build-go]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            platform: x86
+          - arch: arm64
+            platform: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download aria2c
+        uses: actions/download-artifact@v4
+        with:
+          name: aria2c-${{ matrix.arch }}
+          path: /tmp/binaries
+
+      - name: Download Go binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries-${{ matrix.arch }}
+          path: /tmp/binaries
+
+      - name: Assemble FPK directory
+        run: |
+          ARCH=${{ matrix.arch }}
+          PLATFORM=${{ matrix.platform }}
+          STAGE=/tmp/fpk-stage
+
+          # Copy the FPK template
+          cp -r fpk "$STAGE"
+
+          # Replace binaries
+          cp /tmp/binaries/aria2c "$STAGE/app/server/aria2c"
+          cp /tmp/binaries/aria2-manager-$ARCH "$STAGE/app/server/aria2-manager"
+          cp /tmp/binaries/aria2-hook-$ARCH "$STAGE/app/server/aria2-hook"
+          chmod +x "$STAGE/app/server/aria2c" "$STAGE/app/server/aria2-manager" "$STAGE/app/server/aria2-hook"
+
+          # Update manifest platform
+          sed -i "s/^platform.*=.*/platform              = $PLATFORM/" "$STAGE/manifest"
+
+          # Verify
+          echo "=== Manifest ==="
+          cat "$STAGE/manifest"
+          echo "=== Server dir ==="
+          ls -la "$STAGE/app/server/"
+
+          # Create checksums
+          cd "$STAGE"
+          find . -type f | sort | while read f; do
+            sha256sum "$f"
+          done > /tmp/fpk-${ARCH}.inner.SHA256SUMS
+
+      - name: Upload FPK tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpk-tree-${{ matrix.arch }}
+          path: /tmp/fpk-stage/
