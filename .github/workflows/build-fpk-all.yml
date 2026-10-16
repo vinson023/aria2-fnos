@@ -105,7 +105,7 @@ jobs:
           - arch: amd64
             platform: x86
           - arch: arm64
-            platform: arm64
+            platform: arm
     steps:
       - uses: actions/checkout@v4
 

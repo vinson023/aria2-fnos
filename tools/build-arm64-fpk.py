@@ -112,12 +112,12 @@ def main():
         )
         os.chmod(placeholder, 0o644)
 
-    # Update manifest: platform = arm64
+    # Update manifest: platform = arm (fnpack uses "arm" for all ARM variants including aarch64)
     manifest_path = out_dir / "manifest"
     manifest_content = manifest_path.read_text()
     manifest_content = manifest_content.replace(
         "platform              = x86",
-        "platform              = arm64"
+        "platform              = arm"
     )
     manifest_path.write_text(manifest_content)
 

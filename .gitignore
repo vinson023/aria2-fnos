@@ -1,5 +1,6 @@
 # Build artifacts
 aria2.fpk
+aria2-arm64.fpk
 aria2pro.fpk
 *.fpk
 

@@ -251,14 +251,22 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 |---|---|---|
 | `aria2-manager` (arm64) | 9,734,536 B | `C32CB4025E576E7FEDD7C5D9E666A27D508E360B67E6D539A0D4252789DD7762` |
 | `aria2-hook` (arm64) | 3,307,012 B | `52B62393AC2B66B6E40480925357FFCBA540528B12A5B19108383617E38D6379` |
-| `aria2c` (arm64) | 待 CI 构建 | GitHub Actions workflow 产出 |
+| `aria2c` (arm64) | 10,070,168 B | `57097DA852528679971FA2BD43EBA7DD0742F72EE7538B6FD05053CB6D048627` |
 
 ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中构建
 （`.github/workflows/build-static-core.yml`），使用与 x86_64 完全相同的源码、补丁和
-`container-build-static.sh` 配方。由于本机没有 Docker 或 WSL，无法本地构建。
+`container-build-static.sh` 配方。CI 构建耗时约 24 分钟（QEMU 模拟 arm64）。
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
-改 `manifest` 的 `platform = arm64`。待 CI 产出 `aria2c` 后，替换占位文件即可打包。
+改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
+产物 `aria2-arm64.fpk`（13,449,441 B，外层 SHA-256
+`D4940DC5E9536FB2ADEC6C5A12CAAF714E4A6AAD60DFAD025C9CBDF7D7B0DCBA`）。
+
+ARM64 构建验证：
+- `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，
+  `built by aarch64-unknown-linux-musl`，特性列表与 x86_64 版一致。
+- `aria2-manager`: ELF 64-bit aarch64, CGO_ENABLED=0 纯静态。
+- `aria2-hook`: ELF 64-bit aarch64, CGO_ENABLED=0 纯静态。
 
 **状态：实验性。** 未经任何 ARM 设备实机验证，仅供测试。待有 ARM fnOS NAS 后
 需完成与 x86 版相同的验收流程。
