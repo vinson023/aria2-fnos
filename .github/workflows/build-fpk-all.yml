@@ -35,7 +35,7 @@ jobs:
         run: |
           mkdir -p /tmp/inputs/patch
           curl -fSL -o /tmp/inputs/aria2-release-1.36.0.tar.gz \
-            https://github.com/aria2/aria2/releases/download/release-1.36.0/aria2-1.36.0.tar.gz
+            "https://github.com/aria2/aria2/archive/refs/tags/release-1.36.0.tar.gz"
           echo "782B5DAD48CB333E0CBEF8795F868F7963455EFECFD2A818FEB8DAB1CFA973F5  /tmp/inputs/aria2-release-1.36.0.tar.gz" | sha256sum -c -
           cp build-inputs/patch/*.patch /tmp/inputs/patch/
           cp build-inputs/container-build-static.sh /tmp/build.sh
