@@ -1,0 +1,52 @@
+# Build artifacts
+aria2.fpk
+aria2pro.fpk
+*.fpk
+
+# Build work directory (3GB+ of intermediate build files, node_modules, containers)
+build-work/
+
+# Build output (generated per build, not source)
+build-output/
+
+# Build inputs (upstream source tarballs and patches — download separately)
+build-inputs/
+
+# fnOS SDK tooling (large multi-platform binaries, not distributable)
+tools/skill/
+tools/fnpack.exe
+
+# Reference snapshots (third-party copyrighted material)
+reference-snapshot/
+
+# UI evidence and captured static assets (may contain device info)
+tests/fnos-web-static/
+tests/ui-evidence/
+
+# Test screenshots (may contain device IP in browser address bar)
+tests/*.png
+
+# WorkBuddy AI project memory (internal)
+.workbuddy-ai/
+
+# Go
+*.test
+*.out
+gocache/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary
+*.tmp
+*.bak
+*.log

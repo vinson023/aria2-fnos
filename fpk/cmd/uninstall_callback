@@ -1,0 +1,39 @@
+#!/bin/bash
+
+set -eu
+
+if [ "${wizard_keep_config:-yes}" = "no" ]; then
+    # 只删除应用生成的配置、运行期覆盖项、会话、DHT、密钥和日志；下载与归档目录位于授权
+    # 共享目录，属于用户数据，始终保留。原子写入残留的 .tmp 一并清理，避免下次安装读到旧内容。
+    for path in \
+        "$TRIM_PKGETC/config.json" \
+        "$TRIM_PKGETC/rpc.secret" \
+        "$TRIM_PKGVAR/config.json" \
+        "$TRIM_PKGVAR/aria2.conf" \
+        "$TRIM_PKGVAR/aria2.session" \
+        "$TRIM_PKGVAR/aria2.session.tmp" \
+        "$TRIM_PKGVAR/dht.dat" \
+        "$TRIM_PKGVAR/dht6.dat" \
+        "$TRIM_PKGVAR/aria2-overrides.conf" \
+        "$TRIM_PKGVAR/aria2-torrents.tsv" \
+        "$TRIM_PKGVAR/aria2-torrents.tsv.tmp" \
+        "$TRIM_PKGETC/config.json.tmp" \
+        "$TRIM_PKGVAR/aria2.conf.tmp" \
+        "$TRIM_PKGVAR/aria2.conf.overrides" \
+        "$TRIM_PKGVAR/aria2.conf.merged" \
+        "$TRIM_PKGVAR/trackers.txt" \
+        "$TRIM_PKGVAR/aria2.log" \
+        "$TRIM_PKGVAR/manager.log" \
+        "$TRIM_PKGVAR/startup.log" \
+        "$TRIM_PKGVAR/aria2.pid" \
+        "$TRIM_PKGVAR/manager.pid"; do
+        case "$path" in
+            "$TRIM_PKGETC"/*|"$TRIM_PKGVAR"/*) rm -f -- "$path" 2>/dev/null || true ;;
+        esac
+    done
+    # 启动锁是空目录，rm -f 删不掉。正常情况下生命周期脚本已在退出时释放它，
+    # 这里兜住启动过程被强杀留下的残留，避免清空配置后还留着 root 属主的目录。
+    rmdir -- "$TRIM_PKGVAR/.start.lock" 2>/dev/null || true
+fi
+
+exit 0

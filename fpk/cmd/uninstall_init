@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -eu
+
+# 默认保留配置；仅清理明确的应用配置文件，不触碰下载目录。
+keep_config="${wizard_keep_config:-yes}"
+case "$keep_config" in
+    yes|no) ;;
+    *)
+        echo "卸载选项无效，请选择是否保留应用配置。" >&2
+        exit 1
+        ;;
+esac

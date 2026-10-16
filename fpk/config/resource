@@ -1,0 +1,13 @@
+{
+  "data-share": {
+    "shares": [
+      {
+        "name": "aria2/downloads"
+      }
+    ]
+  },
+  "api-scope": [
+    "trim.file.userAccess",
+    "trim.file.sharedAccess"
+  ]
+}

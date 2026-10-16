@@ -1,0 +1,338 @@
+#!/bin/bash
+
+set -eu
+
+: "${TRIM_APPDEST:?TRIM_APPDEST is required}"
+: "${TRIM_PKGETC:?TRIM_PKGETC is required}"
+: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+
+# 将当前飞牛生命周期入口传给管理器，端口变更时可复用同一受控入口重启。
+export TRIM_APPCTL="$0"
+
+framework_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+app_root="$TRIM_APPDEST"
+if [ -x "$framework_root/target/server/aria2c" ]; then
+    app_root="$framework_root/target"
+elif [ -x "$TRIM_APPDEST/target/server/aria2c" ]; then
+    app_root="$TRIM_APPDEST/target"
+fi
+server="$app_root/server"
+manager_pid="$TRIM_PKGVAR/manager.pid"
+aria2_pid="$TRIM_PKGVAR/aria2.pid"
+# fnOS 生命周期上下文可能禁止服务用户穿越 /vol1 的配置路径；运行时
+# 文件放在系统运行目录，持久配置仍保存在 TRIM_PKGETC，停止时回写。
+runtime_dir="/run/aria2"
+config_file="$runtime_dir/config.json"
+runtime_secret="$runtime_dir/rpc.secret"
+socket_file="$runtime_dir/aria2.sock"
+service_user=aria2
+# 启动诊断日志。换机、卷号变化或共享目录被改名时，应用中心只会留下一句“无法启动”，
+# 因此启动阶段的每一条原因都要落到一个持久文件里。该文件不随启动清空，只保留最近 200 行，
+# 卸载选择“清空应用配置”时由 uninstall_callback 删除。决策见 ADR-015。
+startup_log="$TRIM_PKGVAR/startup.log"
+
+log_startup() {
+    printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$startup_log" 2>/dev/null || true
+    lines=$(wc -l < "$startup_log" 2>/dev/null || echo 0)
+    if [ "$lines" -gt 200 ]; then
+        tail -n 200 "$startup_log" > "$startup_log.tmp" 2>/dev/null && mv -f "$startup_log.tmp" "$startup_log" 2>/dev/null || true
+    fi
+}
+
+# 管理器需在应用目录创建网关 Unix Socket；仅授予专属组写权限。
+chown root:"$service_user" "$TRIM_APPDEST" 2>/dev/null || true
+chmod 775 "$TRIM_APPDEST" 2>/dev/null || true
+chown root:"$service_user" "$app_root" 2>/dev/null || true
+chmod 775 "$app_root" 2>/dev/null || true
+
+# 应用中心升级可能以 root 重建配置文件；启动前恢复专属用户可读权限。
+setfacl -b "$TRIM_PKGETC" "$config_file" "$runtime_secret" 2>/dev/null || true
+chown "$service_user:$service_user" "$TRIM_PKGETC" "$TRIM_PKGETC/config.json" "$TRIM_PKGETC/rpc.secret" 2>/dev/null || true
+chmod 750 "$TRIM_PKGETC" 2>/dev/null || true
+mkdir -p "$runtime_dir"
+chown "$service_user:$service_user" "$runtime_dir" 2>/dev/null || true
+chmod 755 "$runtime_dir" 2>/dev/null || true
+rm -f "$config_file" "$runtime_secret" 2>/dev/null || true
+touch "$startup_log" 2>/dev/null || true
+chown "$service_user:$service_user" "$startup_log" 2>/dev/null || true
+chmod 660 "$startup_log" 2>/dev/null || true
+# 这两份文件缺失同样会直接中止启动，必须先记下原因，否则前台什么都看不到。
+cp "$TRIM_PKGETC/config.json" "$config_file" || { log_startup "持久配置 $TRIM_PKGETC/config.json 不可读，启动中止"; exit 1; }
+cp "$TRIM_PKGETC/rpc.secret" "$runtime_secret" || { log_startup "RPC 密钥 $TRIM_PKGETC/rpc.secret 不可读，启动中止"; exit 1; }
+chown "$service_user:$service_user" "$config_file" "$runtime_secret" 2>/dev/null || true
+chmod 644 "$config_file" 2>/dev/null || true
+chmod 640 "$runtime_secret" 2>/dev/null || true
+[ -L "$app_root/aria2.sock" ] || ln -s "$socket_file" "$app_root/aria2.sock"
+
+stop_pid() {
+    pidfile="$1"
+    [ -r "$pidfile" ] || return 0
+    pid=$(cat "$pidfile")
+    case "$pid" in (*[!0-9]*|'') rm -f "$pidfile"; return 0;; esac
+    kill "$pid" 2>/dev/null || true
+    i=0
+    while [ $i -lt 25 ]; do
+        if ! kill -0 "$pid" 2>/dev/null; then break; fi
+        sleep 0.2
+        i=$((i + 1))
+    done
+    kill -9 "$pid" 2>/dev/null || true
+    rm -f "$pidfile"
+}
+
+stop_existing() {
+    stop_pid "$manager_pid"
+    stop_pid "$aria2_pid"
+}
+
+# 运行期覆盖：用户在 AriaNg 中改过、并由管理进程落盘的全局选项。同名项覆盖随包默认值，
+# 解决“前台改完、重启就回退”。管理进程写入前已做过白名单校验，这里再独立校验一遍。
+# dir、端口、密钥、会话与回调脚本由 config.json 和生命周期独占，一旦被覆盖会直接导致
+# 无法启动或绕过安全边界。决策见 ADR-012。
+# 这里刻意分成两遍：第一遍先筛出合法覆盖项，第二遍才据此删除同名默认值。若写成单遍、
+# 对覆盖文件里出现的每个键都先删基础配置行，被篡改过的覆盖文件只要含 rpc-secret=，
+# 就会让真实密钥被删除而又不被追加回来，RPC 全线失败。
+# 无法启动或绕过安全边界，因此必须先筛出合法覆盖项，再据此删除同名默认值，避免出现重复键。
+merge_runtime_options() {
+    overrides_file="$TRIM_PKGVAR/aria2-overrides.conf"
+    [ -s "$overrides_file" ] || return 0
+    safe_file="$TRIM_PKGVAR/aria2.conf.overrides"
+    merged_file="$TRIM_PKGVAR/aria2.conf.merged"
+    rm -f "$safe_file" "$merged_file"
+    if ! awk '
+        {
+            eq = index($0, "=")
+            if (eq <= 1) next
+            key = substr($0, 1, eq - 1)
+            value = substr($0, eq + 1)
+            if (key !~ /^[a-z0-9][a-z0-9-]*$/ || value == "") next
+            if (key ~ /^(rpc-|on-)/) next
+            if (key ~ /^(bt-listen-port|bt-metadata-save-directory|bt-tracker|conf-path|dht-file-path|dht-file-path6|dht-listen-port|dht-message-timeout|dir|enable-dht|enable-dht6|enable-rpc|input-file|listen-port|log|save-session|save-session-interval|save-upload-metadata-file-dir)$/) next
+            if (key in seen) next
+            seen[key] = 1
+            print key "=" value
+        }
+    ' "$overrides_file" > "$safe_file"; then
+        rm -f "$safe_file" "$merged_file"
+        return 0
+    fi
+    [ -s "$safe_file" ] || { rm -f "$safe_file"; return 0; }
+    if ! awk '
+        NR == FNR {
+            eq = index($0, "=")
+            if (eq > 1) overridden[substr($0, 1, eq - 1)] = 1
+            next
+        }
+        {
+            eq = index($0, "=")
+            if (eq > 1 && (substr($0, 1, eq - 1) in overridden)) next
+            print
+        }
+    ' "$safe_file" "$TRIM_PKGVAR/aria2.conf" > "$merged_file"; then
+        rm -f "$safe_file" "$merged_file"
+        return 0
+    fi
+    cat "$safe_file" >> "$merged_file" && mv -f "$merged_file" "$TRIM_PKGVAR/aria2.conf"
+    rm -f "$safe_file" "$merged_file"
+    return 0
+}
+
+write_aria2_config() {
+    rpc_port=$(awk -F: '/"rpc_port"/ { gsub(/[^0-9]/, "", $2); print $2; exit }' "$config_file")
+    listen_port=$(awk -F: '/"listen_port"/ { gsub(/[^0-9]/, "", $2); print $2; exit }' "$config_file")
+    dht_listen_port=$(awk -F: '/"dht_listen_port"/ { gsub(/[^0-9]/, "", $2); print $2; exit }' "$config_file")
+    [ -n "$dht_listen_port" ] || dht_listen_port="$listen_port"
+    dht_timeout=$(awk -F: '/"dht_message_timeout"/ { gsub(/[", ]/, "", $2); print $2; exit }' "$config_file")
+    enable_dht=$(awk -F: '/"enable_dht"/ { gsub(/[", ]/, "", $2); print $2; exit }' "$config_file")
+    enable_dht6=$(awk -F: '/"enable_dht6"/ { gsub(/[", ]/, "", $2); print $2; exit }' "$config_file")
+    [ -n "$dht_timeout" ] || dht_timeout=10
+    case "$dht_timeout" in (*[!0-9]*) dht_timeout=10;; esac
+    [ "$enable_dht" = false ] || enable_dht=true
+    [ "$enable_dht6" = true ] || enable_dht6=false
+    case "$rpc_port:$listen_port" in
+        (*[!0-9:]*|:*)
+            log_startup "配置中的端口无法解析（rpc=$rpc_port bt=$listen_port），启动中止"
+            exit 1
+            ;;
+    esac
+    if [ "$rpc_port" -lt 1024 ] || [ "$rpc_port" -gt 65535 ] || [ "$listen_port" -lt 1024 ] || [ "$listen_port" -gt 65535 ] || [ "$rpc_port" = "$listen_port" ]; then
+        log_startup "端口不合法或互相冲突（rpc=$rpc_port bt=$listen_port），启动中止"
+        exit 1
+    fi
+    config_json=$(cat "$config_file")
+    # 管理器把自愈与失败原因写到 stderr，这里统一归集进 startup.log；stdout 仍是要使用的目录。
+    if ! download_root=$(ARIA2_CONFIG_JSON="$config_json" "$server/aria2-manager" --config "$config_file" --config-env ARIA2_CONFIG_JSON --print-download-root 2>>"$startup_log"); then
+        log_startup "下载目录解析失败，启动中止（原因见上一条管理器输出）"
+        exit 1
+    fi
+    [ -n "$download_root" ] || { log_startup "下载目录解析结果为空，启动中止"; exit 1; }
+    tracker_file="$TRIM_PKGVAR/trackers.txt"
+    # 全新安装时用随包固定的种子列表保证 bt-tracker 非空；自动刷新成功后会覆盖。
+    if [ ! -s "$tracker_file" ] && [ -f "$server/trackers.default" ]; then
+        cp "$server/trackers.default" "$tracker_file"
+    fi
+    trackers=""
+    if [ -f "$tracker_file" ]; then
+        trackers=$(tr '\n\r' ',,' < "$tracker_file" | sed 's/,$//')
+    fi
+    secret=$(cat "$runtime_secret")
+    cat > "$TRIM_PKGVAR/aria2.conf" <<EOF
+dir=$download_root
+enable-rpc=true
+rpc-listen-all=false
+rpc-listen-port=$rpc_port
+rpc-secret=$secret
+listen-port=$listen_port
+dht-listen-port=$dht_listen_port
+enable-dht=$enable_dht
+enable-dht6=$enable_dht6
+dht-message-timeout=$dht_timeout
+max-overall-upload-limit=2M
+bt-request-peer-speed-limit=10M
+# 分享策略：任务完成即停止做种，避免长期占用上传带宽与活动任务列表。
+# seed-time 单位为分钟，0 表示不做种；需要分享时可在前台 BT 设置中调大。
+# seed-ratio 与 seed-time 同时给出时，任一条件满足即结束做种，因此 seed-time=0
+# 会让 BT 任务在下载完成后立刻离开活动列表进入「已完成/已停止」。
+seed-ratio=1.0
+seed-time=0
+bt-detach-seed-only=true
+# 多任务吞吐与并发默认值：按 NAS 硬件收敛，重点是“几十个任务同时跑”时
+# 不打满连接表、不压垮磁盘队列。单服务器连接数与分片数下调、磁盘缓存上调。
+disk-cache=128M
+max-concurrent-downloads=10
+max-connection-per-server=8
+split=16
+min-split-size=8M
+piece-length=1M
+allow-piece-length-change=true
+bt-max-open-files=4096
+bt-max-peers=128
+bt-prioritize-piece=head=32M,tail=32M
+rlimit-nofile=65535
+# 降低控制台输出与历史记录规模，减轻界面轮询与磁盘写入压力。
+# max-download-result 决定「已完成/已停止」列表能记住多少条结果：取值过小会让
+# 大量任务完成后旧记录被挤掉，表现为任务“不见了/不移动”，这里放宽到 2000。
+summary-interval=0
+show-console-readout=false
+console-log-level=notice
+max-download-result=2000
+input-file=$TRIM_PKGVAR/aria2.session
+save-session=$TRIM_PKGVAR/aria2.session
+save-session-interval=60
+dht-file-path=$TRIM_PKGVAR/dht.dat
+continue=true
+file-allocation=trunc
+on-download-complete=$server/aria2-hook-complete
+on-download-error=$server/aria2-hook-error
+on-download-stop=$server/aria2-hook-removed
+EOF
+    if [ -n "$trackers" ]; then
+        printf 'bt-tracker=%s\n' "$trackers" >> "$TRIM_PKGVAR/aria2.conf"
+    fi
+    merge_runtime_options
+    touch "$TRIM_PKGVAR/aria2.session"
+    touch "$tracker_file"
+    chown "$service_user:$service_user" "$TRIM_PKGVAR/aria2.conf" "$TRIM_PKGVAR/aria2.session" "$tracker_file"
+    chmod 600 "$TRIM_PKGVAR/aria2.conf"
+    chmod 600 "$TRIM_PKGVAR/aria2.session"
+    chmod 600 "$tracker_file"
+}
+
+case "$1" in
+start)
+    start_lock="$TRIM_PKGVAR/.start.lock"
+    if ! mkdir "$start_lock" 2>/dev/null; then
+        if [ -r "$manager_pid" ] && kill -0 "$(cat "$manager_pid")" 2>/dev/null && [ -S "$socket_file" ]; then
+            log_startup "服务已在运行，本次启动请求跳过"
+            exit 0
+        fi
+        # 锁存在但没有存活进程也没有 Socket：判定上一次启动被强杀，回收后重试。
+        # 回收或重建失败时状态已无法确认，必须写下原因再退出，
+        # 不能静默 exit 0 让应用中心以为启动成功，前台只看到一个打不开的空界面。
+        if ! rmdir "$start_lock" 2>/dev/null; then
+            log_startup "启动锁 $start_lock 无法回收（属主或只读问题），本次启动跳过"
+            exit 0
+        fi
+        if ! mkdir "$start_lock" 2>/dev/null; then
+            log_startup "启动锁 $start_lock 无法重建，本次启动跳过"
+            exit 0
+        fi
+    fi
+    # 锁只覆盖启动过程本身。抢到之后必须无条件释放：write_aria2_config 与端口自愈里的
+    # exit 1、就绪检查失败的回滚都会从这里退出，不释放就会把 root 建的锁目录永久留在
+    # 应用数据目录里。stop 分支不再代它清理——stop 没有抢过锁，删除它只会破坏并发保护。
+    trap 'rmdir "$start_lock" 2>/dev/null || true' EXIT
+    stop_existing
+    # 启动前预检 Core 可执行性（ADR-015 第 11 条）。自 0.1.95 起 Core 已改为完全静态链接
+    # （ADR-016），宿主缺库这一类病因被消除，因此这里从"缓解手段"降级为"安全网"：
+    # 仍能在 CPU 指令集或 ELF 架构不匹配时，把真实原因写进 startup.log 再中止，
+    # 而不是只留一句无信息的"无法启动"。
+    # 不用管道取首行：$? 会是 head 的退出码，掩盖真正的失败。
+    if ! core_check=$("$server/aria2c" --version 2>&1); then
+        log_startup "Aria2 Core 无法在本机执行：$(printf '%s' "$core_check" | head -n 1)"
+        exit 1
+    fi
+    log_startup "Aria2 Core 自检通过：$(printf '%s' "$core_check" | head -n 1)"
+    # Recreate diagnostic logs as the dedicated user before starting.
+    # AppCenter creates root-owned logs on first start; restart must own them too.
+    rm -f "$TRIM_PKGVAR/aria2.log" "$TRIM_PKGVAR/manager.log" 2>/dev/null || true
+    touch "$TRIM_PKGVAR/aria2.log" "$TRIM_PKGVAR/manager.log"
+    chown "$service_user:$service_user" "$TRIM_PKGVAR/aria2.log" "$TRIM_PKGVAR/manager.log" 2>/dev/null || true
+    chmod 640 "$TRIM_PKGVAR/aria2.log" "$TRIM_PKGVAR/manager.log" 2>/dev/null || true
+    [ -L "$app_root/aria2.sock" ] || ln -s "$socket_file" "$app_root/aria2.sock"
+    config_json=$(cat "$config_file")
+    # --ensure-ports 之前已包含启动自愈，这里再失败说明确实无法恢复，必须带上原因中止。
+    if ! updated_config=$(ARIA2_CONFIG_JSON="$config_json" "$server/aria2-manager" --config "$config_file" --config-env ARIA2_CONFIG_JSON --ensure-ports 2>>"$startup_log"); then
+        log_startup "端口检查与配置自愈失败，启动中止（原因见上一条管理器输出）"
+        exit 1
+    fi
+    [ -n "$updated_config" ] || { log_startup "管理器未返回有效配置，启动中止"; exit 1; }
+    printf '%s\n' "$updated_config" > "$config_file"
+    # Ensure-port 切换结果立即持久化，避免运行时与持久配置分叉。
+    cp "$config_file" "$TRIM_PKGETC/config.json" 2>/dev/null || true
+    chown "$service_user:$service_user" "$TRIM_PKGETC/config.json" 2>/dev/null || true
+    chmod 600 "$TRIM_PKGETC/config.json" 2>/dev/null || true
+    write_aria2_config
+    start-stop-daemon --start --background --make-pidfile --pidfile "$aria2_pid" --chuid "$service_user" --output "$TRIM_PKGVAR/aria2.log" --exec "$server/aria2c" -- --conf-path="$TRIM_PKGVAR/aria2.conf"
+    config_json=$(cat "$config_file")
+    rpc_secret=$(cat "$runtime_secret")
+    # 使用 start-stop-daemon 直接按专属用户启动，避免 fnOS 禁止 setgroups。
+    export ARIA2_CONFIG_JSON="$config_json" ARIA2_RPC_SECRET="$rpc_secret"
+    start-stop-daemon --start --background --make-pidfile --pidfile "$manager_pid" --chuid "$service_user" --output "$TRIM_PKGVAR/manager.log" --exec "$server/aria2-manager" -- --socket "$socket_file" --config "$config_file" --secret "$runtime_secret" --config-env ARIA2_CONFIG_JSON --secret-env ARIA2_RPC_SECRET --ui "$app_root/www" --runtime-options "$TRIM_PKGVAR/aria2-overrides.conf" --torrent-ledger "$TRIM_PKGVAR/aria2-torrents.tsv"
+    # 两份 pid 文件由 start-stop-daemon 以 root 建立，统一交回专属用户，
+    # 免得应用数据目录里混进 root 属主文件。读写方（status、停止、就绪检查）本来都以
+    # root 身份进行，改属主不改变任何行为，只为让「清空应用配置」的删除范围保持单一属主。
+    chown "$service_user:$service_user" "$aria2_pid" "$manager_pid" 2>/dev/null || true
+    # fnOS 设备首次启动动态链接 Core 和管理器可能超过 1 秒，避免过早回收。
+    sleep 3
+    if ! kill -0 "$(cat "$aria2_pid")" 2>/dev/null || ! kill -0 "$(cat "$manager_pid")" 2>/dev/null || [ ! -S "$socket_file" ]; then
+        log_startup "进程或网关 Socket 未能就绪，启动回滚（aria2=$(cat "$aria2_pid" 2>/dev/null) manager=$(cat "$manager_pid" 2>/dev/null)）"
+        # 就绪失败的真实原因几乎总在 aria2.log 与 manager.log 里，而这两个文件应用中心不收集，
+        # 每次启动又被删除重建，重启一次就全丢。这里把尾部若干行归集进持久的 startup.log，
+        # 换机失败时用户只要给一份 startup.log 就能看到病因，不必再猜。
+        log_startup "aria2.log 尾部："
+        tail -n 12 "$TRIM_PKGVAR/aria2.log" 2>/dev/null | sed 's/^/  aria2| /' >> "$startup_log" 2>/dev/null || true
+        log_startup "manager.log 尾部："
+        tail -n 12 "$TRIM_PKGVAR/manager.log" 2>/dev/null | sed 's/^/  mgr | /' >> "$startup_log" 2>/dev/null || true
+        "$0" stop
+        exit 1
+    fi
+    log_startup "启动完成（rpc=$rpc_port bt=$listen_port dht=$dht_listen_port 下载目录=$download_root）"
+    ;;
+stop)
+    if [ -s "$config_file" ]; then cp "$config_file" "$TRIM_PKGETC/config.json" 2>/dev/null || true; fi
+    stop_pid "$manager_pid"
+    stop_pid "$aria2_pid"
+    exit 0
+    ;;
+status)
+    [ -r "$manager_pid" ] && kill -0 "$(cat "$manager_pid")" 2>/dev/null
+    ;;
+restart)
+    "$0" stop
+    "$0" start
+    ;;
+*)
+    exit 1
+    ;;
+esac

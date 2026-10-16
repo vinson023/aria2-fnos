@@ -1,0 +1,16 @@
+{
+    ".url": {
+        "aria2.Application": {
+            "title": "Aria2",
+            "icon": "images/icon_{0}.png",
+            "type": "iframe",
+            "url": "/app/aria2/",
+            "gatewayPrefix": "/app/aria2",
+            "gatewaySocket": "aria2.sock",
+            "allUsers": false,
+            "control": {
+                "accessPerm": "readonly"
+            }
+        }
+    }
+}

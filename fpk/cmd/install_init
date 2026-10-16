@@ -1,0 +1,28 @@
+#!/bin/bash
+
+set -e
+
+validate_wizard_port() {
+    value="$1"
+    case "$value" in
+        *[!0-9]*|'')
+            return 1
+            ;;
+    esac
+    [ "$value" -ge 1024 ] && [ "$value" -le 65535 ]
+}
+
+rpc_port="$wizard_rpc_port"
+listen_port="$wizard_listen_port"
+[ -n "$rpc_port" ] || rpc_port=6800
+[ -n "$listen_port" ] || listen_port=6888
+
+if ! validate_wizard_port "$rpc_port" || ! validate_wizard_port "$listen_port"; then
+    echo "Aria2 Pro 端口必须是 1024-65535 之间的整数。" >&2
+    exit 1
+fi
+
+if [ "$rpc_port" = "$listen_port" ]; then
+    echo "Aria2 RPC 端口与 BT/DHT 监听端口不能相同。" >&2
+    exit 1
+fi

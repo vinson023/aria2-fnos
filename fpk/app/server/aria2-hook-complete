@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "$(dirname "$0")/aria2-hook" --mode=complete --config="$TRIM_PKGETC/config.json" --shares="$TRIM_DATA_SHARE_PATHS" "$@"

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Phase 2 configuration skeleton. `wizard/config` is intentionally deferred:
+# its schema is not present in the fixed offline reference and must be verified
+# with the Phase 4 service configuration workflow before it is packaged.
+
+exit 0

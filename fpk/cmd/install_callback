@@ -1,0 +1,106 @@
+#!/bin/bash
+
+set -e
+
+test -n "$TRIM_APPDEST"
+test -n "$TRIM_PKGETC"
+test -n "$TRIM_PKGVAR"
+
+validate_wizard_port() {
+    value="$1"
+    case "$value" in
+        *[!0-9]*|'')
+            return 1
+            ;;
+    esac
+    [ "$value" -ge 1024 ] && [ "$value" -le 65535 ]
+}
+
+rpc_port="$wizard_rpc_port"
+listen_port="$wizard_listen_port"
+[ -n "$rpc_port" ] || rpc_port=6800
+[ -n "$listen_port" ] || listen_port=6888
+
+if ! validate_wizard_port "$rpc_port" || ! validate_wizard_port "$listen_port"; then
+    echo "Aria2 Pro 端口必须是 1024-65535 之间的整数。" >&2
+    exit 1
+fi
+
+if [ "$rpc_port" = "$listen_port" ]; then
+    echo "Aria2 RPC 端口与 BT/DHT 监听端口不能相同。" >&2
+    exit 1
+fi
+
+umask 077
+
+mkdir -p "$TRIM_PKGETC" "$TRIM_PKGVAR"
+touch "$TRIM_PKGVAR/trackers.txt"
+
+# 二进制可能位于 target 子目录，统一在此确定根路径供迁移与 chmod 复用。
+# 用 if 形式判断，避免 set -e 在条件为假时直接中断安装。
+app_root="$TRIM_APPDEST"
+if [ -x "$app_root/target/server/aria2c" ]; then
+    app_root="$app_root/target"
+fi
+# 先补齐可执行位，下面的配置迁移要直接调用管理进程。
+chmod 755 "$app_root/server/aria2c" "$app_root/server/aria2-manager" "$app_root/server/aria2-hook"
+chmod 755 "$app_root/server/aria2-hook-complete" "$app_root/server/aria2-hook-error" "$app_root/server/aria2-hook-removed"
+
+if [ ! -f "$TRIM_PKGETC/rpc.secret" ]; then
+    tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 48 > "$TRIM_PKGETC/rpc.secret"
+    chmod 600 "$TRIM_PKGETC/rpc.secret"
+fi
+
+# 默认下载目录取飞牛授权的数据共享目录首项，归档目录固定为其下的 completed。
+# 两者都写入 config.json，避免运行时再靠环境变量推导造成界面与实机不一致。
+share_root="${TRIM_DATA_SHARE_PATHS%%:*}"
+default_download_root="$share_root"
+default_archive_root="${share_root}/completed"
+default_archive_enabled=true
+if [ -z "$share_root" ]; then
+    default_download_root=""
+    default_archive_root=""
+    default_archive_enabled=false
+else
+    # 建目录属于尽力而为：安装期共享目录可能尚未就绪，失败时由管理进程启动自愈。
+    mkdir -p "$default_archive_root" 2>/dev/null || true
+    chown aria2:aria2 "$default_archive_root" 2>/dev/null || true
+    chmod 770 "$default_archive_root" 2>/dev/null || true
+fi
+config_preexisting=no
+[ -f "$TRIM_PKGETC/config.json" ] && config_preexisting=yes
+if [ ! -f "$TRIM_PKGETC/config.json" ]; then
+    cat > "$TRIM_PKGETC/config.json" <<EOF
+{
+  "rpc_port": $rpc_port,
+  "listen_port": $listen_port,
+  "dht_listen_port": $listen_port,
+  "dht_message_timeout": "10",
+  "enable_dht": true,
+  "enable_dht6": true,
+  "gateway_user": "",
+  "gateway_role": "",
+  "download_root": "$default_download_root",
+  "archive_enabled": $default_archive_enabled,
+  "archive_root": "$default_archive_root",
+  "special_mode": "move",
+  "tracker_source": "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt",
+  "tracker_auto_update": true,
+  "authorized_roots": [],
+  "config_version": 1
+}
+EOF
+    chmod 600 "$TRIM_PKGETC/config.json"
+fi
+
+# 覆盖安装或保留配置重装时，把历史配置收敛到本版默认：补齐新增键、替换早期版本由机器
+# 写出的旧默认下载目录、修正非法取值。迁移失败不阻断安装，启动校验仍会兜底报错。
+if [ "$config_preexisting" = yes ]; then
+    "$app_root/server/aria2-manager" --migrate-config --config "$TRIM_PKGETC/config.json" || true
+fi
+
+setfacl -Rb "$TRIM_PKGETC" "$TRIM_PKGVAR" 2>/dev/null || true
+chown -R aria2:aria2 "$TRIM_PKGETC" "$TRIM_PKGVAR"
+chown root:aria2 "$TRIM_APPDEST"
+chmod 775 "$TRIM_APPDEST"
+chmod 600 "$TRIM_PKGVAR/trackers.txt"

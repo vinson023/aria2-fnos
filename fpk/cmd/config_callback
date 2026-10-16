@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# Phase 2 configuration skeleton. No running service is restarted yet.
+
+exit 0

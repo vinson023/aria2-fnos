@@ -1,0 +1,27 @@
+[
+  {
+    "stepTitle": "Aria2 网络设置",
+    "items": [
+      {
+        "type": "text",
+        "field": "wizard_rpc_port",
+        "label": "Aria2 RPC 端口",
+        "initValue": "6800",
+        "rules": [
+          { "required": true, "message": "请输入 RPC 端口" },
+          { "pattern": "^[0-9]+$", "message": "端口只能包含数字" }
+        ]
+      },
+      {
+        "type": "text",
+        "field": "wizard_listen_port",
+        "label": "BT/DHT 监听端口",
+        "initValue": "6888",
+        "rules": [
+          { "required": true, "message": "请输入监听端口" },
+          { "pattern": "^[0-9]+$", "message": "端口只能包含数字" }
+        ]
+      }
+    ]
+  }
+]

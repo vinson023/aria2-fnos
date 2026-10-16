@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -eu
+
+: "${TRIM_PKGETC:?TRIM_PKGETC is required}"
+: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+
+# 升级不接受会影响持久状态的外部输入。原配置、密钥、会话和 DHT 文件均由回调保留。
+exit 0
+
+exit 0

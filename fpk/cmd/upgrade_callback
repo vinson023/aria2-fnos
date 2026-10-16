@@ -1,0 +1,34 @@
+#!/bin/bash
+
+set -eu
+
+: "${TRIM_APPDEST:?TRIM_APPDEST is required}"
+: "${TRIM_PKGETC:?TRIM_PKGETC is required}"
+: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+
+# 升级不重写配置、密钥、会话和 DHT 数据；只创建本版新增的安全 Tracker 文件。
+test -f "$TRIM_PKGETC/config.json"
+test -s "$TRIM_PKGETC/rpc.secret"
+touch "$TRIM_PKGVAR/aria2.session" "$TRIM_PKGVAR/trackers.txt"
+
+# 二进制可能位于 target 子目录；用 if 形式判断，避免 set -e 在条件为假时中断升级。
+app_root="$TRIM_APPDEST"
+if [ -x "$app_root/target/server/aria2c" ]; then
+    app_root="$app_root/target"
+fi
+chmod 755 "$app_root/server/aria2c" "$app_root/server/aria2-manager" "$app_root/server/aria2-hook"
+chmod 755 "$app_root/server/aria2-hook-complete" "$app_root/server/aria2-hook-error" "$app_root/server/aria2-hook-removed"
+
+# 升级时把历史配置收敛到本版默认：补齐本版新增的键、替换早期版本由机器写出的旧默认下载
+# 目录、修正非法取值（例如带单位的 DHT 超时）。用户手工设置过的取值一律保持不变；迁移失败
+# 不阻断升级，启动校验会兜底报错并保留原配置。
+"$app_root/server/aria2-manager" --migrate-config --config "$TRIM_PKGETC/config.json" || true
+
+setfacl -Rb "$TRIM_PKGETC" "$TRIM_PKGVAR" 2>/dev/null || true
+chown -R aria2:aria2 "$TRIM_PKGETC" "$TRIM_PKGVAR"
+chown root:aria2 "$TRIM_APPDEST"
+chmod 775 "$TRIM_APPDEST"
+chmod 750 "$TRIM_PKGETC"
+chmod 600 "$TRIM_PKGETC/config.json" "$TRIM_PKGETC/rpc.secret" "$TRIM_PKGVAR/aria2.session" "$TRIM_PKGVAR/trackers.txt"
+
+exit 0

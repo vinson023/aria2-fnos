@@ -1,0 +1,28 @@
+appname               = aria2
+version               = 0.2.2
+display_name          = Aria2
+desc                  = 原生飞牛 Aria2 下载服务。
+platform              = x86
+source                = thirdparty
+maintainer            = vinson023
+distributor           = vinson023
+desktop_uidir         = ui
+desktop_applaunchname = aria2.Application
+ctl_stop              = true
+checkport             = false
+micro_app             = true
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
