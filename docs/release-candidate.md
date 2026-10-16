@@ -2,13 +2,15 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.2`，11,160,512 B）
+- 文件：`aria2.fpk`（版本 `0.2.3`，11,160,550 B）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`17C0E8756CBD94EA5BAEAAEE87A9FF69AB4CEF5B6ECC0CB9388A271BBA5A0CAB`
+- FPK 外层 SHA-256：`38A11322318EE662D14D83ECD6D792F608ABC6EA0C4B396EA2CCCBFAFD9F15C`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
   （见 `docs/adr/ADR-018-identity-rename-and-archive-automation.md`）。
+- `0.2.3` 修复：AriaNg 连接提示与安装向导文案仍显示「Aria2 Pro」——飞牛定制版设置加载
+  函数把 RPC 别名写死为 `"Aria2 Pro"`，本版改为 `"Aria2"`，并同步两处安装向导端口校验提示。
 - `0.2.2` 修复：AriaNg 原生「基本设置」页面仍显示「归档目录」和「下载完成后归档」字段，
   直接在 AriaNg 压缩包的 `basicOptions` 数组中删除 `special-mode` 和 `fnos-archive-dir`，
   使这两个字段不再出现在基本设置页面上。
@@ -21,10 +23,11 @@
 - 回调：静态 Go x86_64，3,486,852 B，
   SHA-256 `32582906FAD6BF779F7774681F021CC2E5ACC21BBB8DC82AEA49ECF0C2E5D35A`。
 - AriaNg：1.3.14 fnOS 适配 bundle（网关路径已改为 `/app/aria2/jsonrpc`）；构建时使用 Node，运行时仅静态文件。
-  `0.2.2` 起 `basicOptions` 数组不再包含 `special-mode` 和 `fnos-archive-dir`。
+  `0.2.2` 起 `basicOptions` 数组不再包含 `special-mode` 和 `fnos-archive-dir`；
+  `0.2.3` 起 RPC 别名默认值由 `Aria2 Pro` 改为 `Aria2`。
 - SDK：固定 `@trimjs/web-app@0.4.2`，仅纳入静态 `dist/index.js`；FPK Scope 为 `trim.file.userAccess`、`trim.file.sharedAccess`，manifest `micro_app=true`。
 
-本版溯源清单：`build-output/fpk-0.2.2.inner.SHA256SUMS`（49 个文件）。
+本版溯源清单：`build-output/fpk-0.2.3.inner.SHA256SUMS`（49 个文件）。
 
 ## 已验证
 

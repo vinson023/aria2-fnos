@@ -1,7 +1,7 @@
 # 飞牛版 Aria2
 
 原生飞牛 fnOS FPK：集成 Aria2 Core、Go 管理器和 AriaNg。当前 x86_64 候选包为
-`0.1.96`，运行时不依赖 Docker、Node.js、Python 或数据库，也不再依赖宿主的任何共享库。
+`0.2.3`，运行时不依赖 Docker、Node.js、Python 或数据库，也不再依赖宿主的任何共享库。
 <img width="1457" height="834" alt="image" src="https://github.com/user-attachments/assets/68ca58a0-fc10-49b2-8f98-5411c29b79de" />
 
 
@@ -87,7 +87,10 @@
 - [开发计划](docs/development-plan.md)
 - [架构决策记录](docs/adr/)
 - [离线参考资料](reference-snapshot/README.md)
-BT 任务）、BT 任务完成即停止做种并离开活动列表、简体中文界面与“下载完成后归档/归档目录”
-设置项可正常保存，网关 RPC 往返约 13-16 ms 且响应不再截断。验收入口为
-`tests/fnos-verify-0188.sh`（设备侧检查）与 `tests/fnos-verify-ui.mjs`（真实浏览器界面验收），
-截图证据在 `tests/ui-evidence/`，决策与证据记录见 `docs/adr/ADR-009-archiving-seeding-and-throughput-defaults.md`。
+
+## 当前状态
+
+最新候选包为 `0.2.3`（x86_64），相对 `0.2.0` 的三处界面/文案修复：归档目录字段从 AriaNg
+基本设置页移除（`0.2.2`）、归档目录创建失败时降级而非阻塞保存（`0.2.1`）、连接提示与安装
+向导文案统一为「Aria2」（`0.2.3`）。完整版本历史、产物指纹与逐文件溯源清单见
+[候选发布物](docs/release-candidate.md)。

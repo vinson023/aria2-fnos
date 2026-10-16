@@ -18,7 +18,7 @@ listen_port="$wizard_listen_port"
 [ -n "$listen_port" ] || listen_port=6888
 
 if ! validate_wizard_port "$rpc_port" || ! validate_wizard_port "$listen_port"; then
-    echo "Aria2 Pro 端口必须是 1024-65535 之间的整数。" >&2
+    echo "Aria2 端口必须是 1024-65535 之间的整数。" >&2
     exit 1
 fi
 

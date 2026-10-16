@@ -1,5 +1,5 @@
 appname               = aria2
-version               = 0.2.2
+version               = 0.2.3
 display_name          = Aria2
 desc                  = 原生飞牛 Aria2 下载服务。
 platform              = x86
