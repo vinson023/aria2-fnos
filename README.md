@@ -97,3 +97,23 @@
 
 ARM64 (aarch64) 版本支持已加入：Go 管理器已交叉编译验证，`aria2c` 静态核心由 GitHub Actions
 构建。详见 [候选发布物 ARM64 段落](docs/release-candidate.md#arm64-aarch64-版本实验性未设备验收)。
+
+## 许可证
+
+本项目以 **GNU General Public License v3.0** 发布，全文见 [LICENSE](LICENSE)。
+
+之所以选择 GPL-3.0，是因为发行包内嵌 Aria2 Core（GPL-3.0）二进制，静态链接使其成为不可
+分发的单一作品，整体沿用同一许可证可以避免额外的合规复杂度。
+
+随包分发的第三方组件及各自许可证：
+
+| 组件 | 许可证 | 说明 |
+| --- | --- | --- |
+| Aria2 Core (`aria2c`) | GPL-3.0 | 静态链接，含 P3TERX 补丁 |
+| AriaNg | MIT | Web 界面，保留原版权声明 |
+| `@trimjs/web-app` | MIT | 飞牛 Web SDK，仅静态文件 |
+| musl / OpenSSL 3.5 / zlib / expat / SQLite / libssh2 | MIT、Apache-2.0、zlib、MIT、Public Domain、BSD-2 | 静态链接进 Core，均允许该方式分发 |
+
+GPL Core 对应源码的获取方式、补丁集合与可复现构建说明见
+[许可证与产物溯源计划](docs/license-and-provenance-plan.md) 与
+[ADR-008](docs/adr/ADR-008-license-provenance-and-source-offer.md)。

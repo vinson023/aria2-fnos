@@ -1,0 +1,13 @@
+# Keep the GPL text at LF so GitHub's license detection and Linux tooling read it correctly.
+LICENSE text eol=lf
+
+# Binary assets: never apply EOL conversion or textual diff.
+*.png   binary
+*.PNG   binary
+*.ico   binary
+*.eot   binary
+*.ttf   binary
+*.woff  binary
+*.woff2 binary
+*.fpk   binary
+*.gz    binary

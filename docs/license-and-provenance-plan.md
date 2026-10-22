@@ -12,10 +12,26 @@
 | P3TERX Aria2 Pro Docker | `upstream/Aria2-Pro-Docker`，revision `4ec58da2901947f57e2e53f30077723627c8eaeb` | 行为与默认参数参考 | MIT | 未直接分发时仅记为行为参考；若复制任何文件，纳入许可证清单 |
 | P3TERX aria2.conf | `upstream/aria2.conf`，revision `02b9d95ea155e66f7e3c4340cd22717f8bc7401c` | 配置、Tracker 与回调行为参考 | MIT | 未直接分发时仅记为行为参考；若改编/复制脚本，保留 MIT 声明 |
 | `@trimjs/web-app` | `npm/trimjs-web-app/package-0.4.2` | 飞牛页面宿主交互 SDK | 当前快照未发现 `license` 字段或 `LICENSE` 文件 | 实际打包前从权威发布来源核对许可证和传递依赖，再列入发布清单 |
-| 自研 Go 管理器与 FPK 脚本 | Phase 2 后产生 | 服务、网关和生命周期 | 待项目发布策略确认 | 在首次分发前固定项目许可证与版权声明 |
+| 自研 Go 管理器与 FPK 脚本 | Phase 2 后产生 | 服务、网关和生命周期 | **GPL-3.0**（2026-10-22 确认） | 仓库根 `LICENSE` 为规范 GPL-3.0 全文 |
 
 “当前用途”为设计结论，不表示这些文件已经被复制进应用包。`reference-snapshot/`
 仅作分析证据，不能整体打包为运行时依赖。
+
+## 项目自身许可证（2026-10-22）
+
+仓库以 **GPL-3.0** 发布，根目录 `LICENSE` 为 GNU 官方 gpl-3.0.txt 规范全文
+（35,149 字节，SHA-256 `3972DC9744F6499F0F9B2DBF76696F2AE7AD8AF9B23DDE66D6AF86C9DFB36986`，
+LF 行尾，逐字节与 `https://www.gnu.org/licenses/gpl-3.0.txt` 一致）。
+
+选型理由：发行包内嵌 Aria2 Core（GPL-3.0）二进制，且自 `0.1.95` 起改为完全静态链接，
+使 Core 与包内其余原生代码构成单一不可分作品；整体采用同一许可证可避免「GPL 组件与非
+GPL 自研代码混合分发」时的边界争议，也不改变既有的 Core 源码提供义务范围。
+
+随包保留的第三方许可证仍在 `fpk/app/LICENSES/`：
+`Aria2-Pro-Core-GPL-3.0.txt`（P3TERX 原文件，CRLF，SHA-256
+`230184F60BAE2FEAF244F10A8BAC053C8FF33A183BCC365B4D8B876D2B7F4809`）、
+`AriaNg-MIT.txt`、`Trim-Web-App-MIT.txt`。根 `LICENSE` 与包内 GPL 文本内容一致，
+仅行尾规范化为 LF，因此两者哈希不同属预期。
 
 ## 每个架构产物必须记录的字段
 
