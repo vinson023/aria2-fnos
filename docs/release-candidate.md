@@ -2,10 +2,12 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.3`，11,160,550 B）
+- 文件：`aria2.fpk`（版本 `0.2.3`，11,160,627 B；GitHub Release 中名为 `aria2-0.2.3-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`38A11322318EE662D14D83ECD6D792F608ABC6EA0C4B396EA2CCCBFAFD9F15C`
-  （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
+- FPK 外层 SHA-256：`531FFE273CE16D25FAEB116A70ED728655DED66F3369F8AC50FB04A7F31DBCE4`
+  （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准。
+  2026-10-22 为发布重建过一次，外层由 11,160,550 B / `38A11322…F15C` 变为当前值，
+  但解包后 49 个文件与记录清单逐字节一致）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
   （见 `docs/adr/ADR-018-identity-rename-and-archive-automation.md`）。
@@ -270,3 +272,23 @@ ARM64 构建验证：
 
 **状态：实验性。** 未经任何 ARM 设备实机验证，仅供测试。待有 ARM fnOS NAS 后
 需完成与 x86 版相同的验收流程。
+
+## GitHub Release（2026-10-22）
+
+`0.2.3` 已发布到 <https://github.com/vinson023/aria2-fnos/releases/tag/v0.2.3>，
+tag `v0.2.3`。发布资产：
+
+| 资产 | 大小 | SHA-256 |
+|---|---|---|
+| `aria2-0.2.3-x86_64.fpk` | 11,160,627 B | `531FFE273CE16D25FAEB116A70ED728655DED66F3369F8AC50FB04A7F31DBCE4` |
+| `aria2-0.2.3-arm64.fpk` | 13,449,441 B | `D4940DC5E9536FB2ADEC6C5A12CAAF714E4A6AAD60DFAD025C9CBDF7D7B0DCBA` |
+| `aria2-core-source-offer-0.2.3.tar.gz` | 8,364 B | `D89FB98C1AB8492A805B55C15003FA1936440A1DBDED1F9960470F985059715C` |
+
+第三个资产是 GPL-3.0 对应源码提供材料（`ADR-008` 要求）：含上游 `aria2` `release-1.36.0`
+固定地址与校验和、4 个补丁、静态构建脚本与复现步骤。归档内文件统一 LF 行尾，
+`mtime` 固定，可重复生成同一哈希。
+
+发布前重新构建了 x86 包（原 `aria2.fpk` 在 ARM64 构建时被 fnpack 覆盖并改名）。
+重建后解包 49 个文件与 `build-output/fpk-0.2.3.inner.SHA256SUMS` **逐字节一致**，
+仅外层归档元数据变化；两个架构包之间只有 3 个原生二进制不同，其余 46 个文件
+（含 `0.2.3` 修正过的 AriaNg bundle，SHA-256 `7835FEF4…66CB1`）完全相同。
