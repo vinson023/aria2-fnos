@@ -165,6 +165,12 @@ func repairStartupConfig(rawData []byte) (config, []string, error) {
 	// 下载目录：不可解析、越界或不可写时清空，交给 normalizeConfig 重新派生默认值。
 	if value.DownloadRoot != "" {
 		resolved, err := resolveDirectory(value.DownloadRoot)
+		// 可写性用 ensureAppWritable：目录权限被系统还原（重挂卷、快照回滚）后，
+		// 先补一次组授权再判定，避免把用户设好的目录静默改回默认值。
+		var writeErr error
+		if err == nil && downloadRootAllowed(resolved, roots) {
+			writeErr = ensureAppWritable(resolved)
+		}
 		switch {
 		case err != nil:
 			notes = append(notes, fmt.Sprintf("下载目录 %s 在当前机器上不存在，已改用默认目录", value.DownloadRoot))
@@ -172,7 +178,7 @@ func repairStartupConfig(rawData []byte) (config, []string, error) {
 		case !downloadRootAllowed(resolved, roots):
 			notes = append(notes, fmt.Sprintf("下载目录 %s 不在可用的飞牛数据卷内，已改用默认目录", value.DownloadRoot))
 			value.DownloadRoot = ""
-		case !writableByAppUser(resolved):
+		case writeErr != nil:
 			notes = append(notes, fmt.Sprintf("下载目录 %s 对 aria2 用户不可写，已改用默认目录", value.DownloadRoot))
 			value.DownloadRoot = ""
 		default:

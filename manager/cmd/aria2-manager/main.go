@@ -337,22 +337,54 @@ func appUserIDs() (int, int, bool) {
 	return uid, gid, true
 }
 
+// probeAppWritable 以专属应用用户身份实测目录可写性，不做日志与补救。
+func probeAppWritable(dir string) error {
+	if os.Geteuid() != 0 {
+		if writableDirectory(dir) {
+			return nil
+		}
+		return errors.New("当前用户无法在该目录写入")
+	}
+	uid, gid, ok := appUserIDs()
+	if !ok {
+		if writableDirectory(dir) {
+			return nil
+		}
+		return errors.New("当前用户无法在该目录写入")
+	}
+	return writableAsUser(dir, uid, gid)
+}
+
 // writableByAppUser 判断专属应用用户能否在目录内创建文件。安装、配置回调与启动探针
 // 都以 root 执行，当前用户恒可写，必须临时降权实测；否则会把 aria2 用户实际写不进去的
 // 目录当成可用，直到真正下载时才失败。
 func writableByAppUser(dir string) bool {
-	if os.Geteuid() != 0 {
-		return writableDirectory(dir)
-	}
-	uid, gid, ok := appUserIDs()
-	if !ok {
-		return writableDirectory(dir)
-	}
-	if err := writableAsUser(dir, uid, gid); err != nil {
+	if err := probeAppWritable(dir); err != nil {
 		log.Printf("应用用户对目录 %s 无写权限: %v", dir, err)
 		return false
 	}
 	return true
+}
+
+// ensureAppWritable 保证专属应用用户可以写入目录。探测失败时尝试一次自动授权
+// （把目录划给专属应用组并补组写权限，属主不变），然后再探测。
+//
+// 用户自己填的目录（如 /vol1/1000/Download）属主是管理员、权限 755，飞牛的 trimacl
+// 又不认 POSIX ACL，因此未经过应用内目录选择器授权的目录 aria2 一律写不进去。
+// 没有这一步的话，安装向导里填任何已有目录都会让安装失败。
+func ensureAppWritable(dir string) error {
+	probeErr := probeAppWritable(dir)
+	if probeErr == nil {
+		return nil
+	}
+	if adoptErr := adoptDirectoryGroup(dir); adoptErr != nil {
+		return fmt.Errorf("aria2 用户对目录 %s 没有写入权限（%v），自动授权失败: %v", dir, probeErr, adoptErr)
+	}
+	if err := probeAppWritable(dir); err != nil {
+		return fmt.Errorf("aria2 用户对目录 %s 仍无写入权限: %v", dir, err)
+	}
+	log.Printf("已把目录 %s 划给专属应用组并授予组写权限（属主不变）", dir)
+	return nil
 }
 
 func effectiveDownloadRoot(value config) (string, error) {
@@ -641,8 +673,9 @@ func validateConfig(value config) error {
 		if !downloadRootAllowed(resolved, approvedRoots) {
 			return errors.New("download root is outside approved shared directories")
 		}
-		if !writableByAppUser(resolved) {
-			return errors.New("aria2 用户没有下载目录写入权限，请在飞牛文件管理器中授权该目录")
+		// 用户自选的已有目录需要先补一次组授权，否则 aria2 写不进去。
+		if err := ensureAppWritable(resolved); err != nil {
+			return fmt.Errorf("下载目录不可写：%v", err)
 		}
 	}
 	if value.ArchiveEnabled {
@@ -653,8 +686,8 @@ func validateConfig(value config) error {
 		if err != nil || !downloadRootAllowed(resolved, approvedRoots) {
 			return errors.New("archive root is outside approved shared directories")
 		}
-		if !writableByAppUser(resolved) {
-			return errors.New("aria2 用户没有归档目录写入权限")
+		if err := ensureAppWritable(resolved); err != nil {
+			return fmt.Errorf("归档目录不可写：%v", err)
 		}
 	}
 	return nil

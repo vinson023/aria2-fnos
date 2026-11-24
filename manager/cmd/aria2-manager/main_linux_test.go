@@ -172,3 +172,40 @@ func TestConfigUpdateKeepsDownloadRootWhenArchiveUnwritable(t *testing.T) {
 		t.Fatalf("归档目录必须清空: got %q", store.cfg.ArchiveRoot)
 	}
 }
+
+// 用户在安装向导里填写已有共享目录（如 /vol1/1000/Download）时，该目录属主是管理员、
+// 权限 755，飞牛的 trimacl 又不认 POSIX ACL，专属应用用户写不进去。ensureAppWritable
+// 应当把目录划给专属应用组并补组写权限，同时保持属主不变。
+//
+// 需要 root 才能改属组，且依赖飞牛注入的 TRIM_GID，因此在普通 CI 上跳过。
+func TestEnsureAppWritableAdoptsGroupWithoutChangingOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("需要 root 才能修改目录属组")
+	}
+	if _, ok := dedicatedGroupGID(); !ok {
+		t.Skip("缺少 TRIM_GID，非飞牛环境")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureAppWritable(dir); err != nil {
+		t.Fatalf("ensureAppWritable: %v", err)
+	}
+	after, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Mode().Perm()&0o070 != 0o070 {
+		t.Fatalf("group write not granted: %v", after.Mode().Perm())
+	}
+	if uid, _, ok := directoryOwner(before); ok {
+		if uidAfter, _, okAfter := directoryOwner(after); !okAfter || uidAfter != uid {
+			t.Fatalf("owner changed: %d -> %d", uid, uidAfter)
+		}
+	}
+}

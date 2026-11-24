@@ -272,6 +272,11 @@ func ensureWizardDownloadRoot(root string, approved []string) error {
 		if !info.IsDir() {
 			return errors.New("下载文件夹已存在但不是目录")
 		}
+		// 目录已存在不代表 aria2 能写：用户手填的共享目录属主是管理员、飞牛也没给
+		// 本应用授权，这里补一次组授权（属主不变），否则安装会在写探测处失败。
+		if err := ensureAppWritable(root); err != nil {
+			return fmt.Errorf("%v。也可安装后在 Aria2 右上角文件夹菜单里「选择并授权目录」", err)
+		}
 		return nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
@@ -320,7 +325,7 @@ func ensureWizardDownloadRoot(root string, approved []string) error {
 			parentInfo = created
 		}
 	}
-	return nil
+	return ensureAppWritable(root)
 }
 
 // applyWizardSecret 处理 RPC 密钥。未填写时保持现有密钥不动；密钥文件缺失时补一个
