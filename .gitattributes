@@ -1,6 +1,12 @@
 # Keep the GPL text at LF so GitHub's license detection and Linux tooling read it correctly.
 LICENSE text eol=lf
 
+# 生命周期脚本与向导表单由 fnOS 的 shell 直接执行：工作区若是 CRLF，shebang 会变成
+# "#!/bin/bash\r"，在设备上表现为莫名其妙的 “bad interpreter”。固定为 LF。
+fpk/cmd/*  text eol=lf
+fpk/wizard/* text eol=lf
+*.sh       text eol=lf
+
 # Binary assets: never apply EOL conversion or textual diff.
 *.png   binary
 *.PNG   binary
