@@ -304,8 +304,22 @@ start)
     # root 身份进行，改属主不改变任何行为，只为让「清空应用配置」的删除范围保持单一属主。
     chown "$service_user:$service_user" "$aria2_pid" "$manager_pid" 2>/dev/null || true
     # fnOS 设备首次启动动态链接 Core 和管理器可能超过 1 秒，避免过早回收。
-    sleep 3
-    if ! kill -0 "$(cat "$aria2_pid")" 2>/dev/null || ! kill -0 "$(cat "$manager_pid")" 2>/dev/null || [ ! -S "$socket_file" ]; then
+    # 就绪检查改为轮询而不是固定等待 3 秒：应用中心在「保存并重启」后会立刻查询应用状态，
+    # 固定长睡会把“未运行”的窗口拖长，界面上更容易出现一次“服务异常”。进程与网关 Socket
+    # 通常在 1 秒内就绪，轮询到就返回，最坏仍保留 10 秒上限。
+    ready=0
+    i=0
+    while [ "$i" -lt 100 ]; do
+        if [ -S "$socket_file" ] && [ -r "$aria2_pid" ] && [ -r "$manager_pid" ] &&
+            kill -0 "$(cat "$aria2_pid" 2>/dev/null)" 2>/dev/null &&
+            kill -0 "$(cat "$manager_pid" 2>/dev/null)" 2>/dev/null; then
+            ready=1
+            break
+        fi
+        sleep 0.1
+        i=$((i + 1))
+    done
+    if [ "$ready" -ne 1 ]; then
         log_startup "进程或网关 Socket 未能就绪，启动回滚（aria2=$(cat "$aria2_pid" 2>/dev/null) manager=$(cat "$manager_pid" 2>/dev/null)）"
         # 就绪失败的真实原因几乎总在 aria2.log 与 manager.log 里，而这两个文件应用中心不收集，
         # 每次启动又被删除重建，重启一次就全丢。这里把尾部若干行归集进持久的 startup.log，
