@@ -304,6 +304,9 @@ func ensureWizardDownloadRoot(root string, approved []string) error {
 
 // applyWizardSecret 处理 RPC 密钥。未填写时保持现有密钥不动；密钥文件缺失时补一个
 // 随机值，保证首次安装不需要用户必须理解“RPC 密钥”是什么也能正常启动。
+//
+// 飞牛会把上次提交的密钥原样回填到应用设置表单并随表单再次提交，因此“提交了密钥”
+// 不等于“密钥变了”。只有与磁盘内容不同才视为变更，否则一次原样保存就会触发重启。
 func applyWizardSecret(secretPath, submitted string) (bool, string, error) {
 	if secretPath == "" {
 		return false, "", nil
@@ -312,10 +315,13 @@ func applyWizardSecret(secretPath, submitted string) (bool, string, error) {
 		if !validRPCSecret(submitted) {
 			return false, "", fmt.Errorf("RPC 密钥需为 16-%d 位字母、数字、点、下划线或连字符", maxRPCSecretLength)
 		}
+		if existing, err := os.ReadFile(secretPath); err == nil && strings.TrimSpace(string(existing)) == submitted {
+			return false, "", nil
+		}
 		if err := writeSecretFile(secretPath, submitted); err != nil {
 			return false, "", err
 		}
-		return true, "RPC 密钥已更新", nil
+		return true, "", nil
 	}
 	if _, err := os.Stat(secretPath); err == nil {
 		return false, "", nil

@@ -2,9 +2,9 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.4`，10,630,083 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,630,432 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`D6BF970977F22F9F6A8DA4C5A6C52E22CA73213A7D812AEB5EA34C9E55D5702F`
+- FPK 外层 SHA-256：`ACD5B648F219891B0831EEFAEEB496EE8920DE4F03EEBEA9EC181EAC76A2C096`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
@@ -24,7 +24,7 @@
   SHA-256 `A482FB24722B87A0A719ACEE330E329D6DFA21075808C66202E451782812015B`
   （自 `0.1.95` 起逐字节未变）。
 - 管理器：静态 Go x86_64，7,790,752 B（`0.2.4` 重新编译，含向导配置写入逻辑），
-  SHA-256 `8ED62C792272EF4055F3F9BA22551D94705D7A4CAF1D11D060BDC877B2ED573A`。
+  SHA-256 `7E116443687132A036EE76FB6817D2CF41D6D51CA74C63EB820CABEBD6088B8C`。
 - 回调：静态 Go x86_64，2,793,632 B，
   SHA-256 `A92A9162732788E190EEEED2325991A7E8118146A999205C57E48338B4A4A694`。
   Go 二进制自 `0.2.4` 起带 `-ldflags="-s -w"` 构建，体积较此前版本明显下降，行为不变。
@@ -278,12 +278,22 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 - `config_callback` 在服务运行时执行一次受控重启（约 8 秒）使新端口/密钥/目录生效；
   应用未运行时跳过重启，配置在下次启动时读取。
 
-**验证状态：** 单元测试覆盖端口范围与互斥、密钥字符集与长度、目录越界拒绝、
-空值保持、安装期创建、配置回读（`manager/cmd/aria2-manager/wizard_test.go`，在
-ubuntu runner 上执行）；`go vet` 通过；x86_64 与 ARM64 包均完成解包校验
-（49 个内层文件 + 外层 `wizard/config`，三个原生二进制架构正确）。**尚未在设备上
-验证安装向导表单渲染、应用设置页渲染与保存后重启生效**——测试机 SSH 在本次开发窗口
-内不可达。
+**验证状态：已在 fnOS 设备（192.168.5.141，x86_64，fnOS 6.18.18.c1186-trim）完成端到端验收。**
+
+| 验证项 | 方法与结果 |
+|---|---|
+| 安装向导写入 | `appcenter-cli install-fpk -e <env>`，六个字段全部生效：`config.json` 得到 `rpc_port=6805`、`listen_port=6885`、`dht_listen_port=6886`、`special_mode=move`、`download_root=/vol1/@appshare/aria2/downloads/movies`；密钥文件为提交值；下载目录与 `completed` 自动创建且属主为 `aria2` |
+| 运行期生效 | 启动后 `aria2.conf` 为 `rpc-listen-port=6805`、`listen-port=6885`、`dht-listen-port=6886`、`dir=<新目录>`、`rpc-secret=<新密钥>`；`ss` 显示 RPC 仅监听 `127.0.0.1:6805` |
+| 应用设置表单 | `GET /app-center/v1/config/wizard?appName=aria2` 返回六个字段，且**飞牛会用当前值回填 `initValue`**（端口、密钥、下载目录均为现值，密钥以密码框回显） |
+| 应用设置保存 | `POST` 修改 DHT 端口 6886→6887、归档 `move`→`off`：`config.json` 与 `aria2.conf` 同步更新，服务自动重启（PID 变化），`startup.log` 记 `应用设置已更新并重启生效` |
+| 原样保存不重启 | 以完全相同取值再次提交：PID 未变化、无重启日志——`--apply-wizard` 退出码 `2` 生效 |
+| 密钥轮换 | 提交新密钥后 `rpc.secret` 与 `aria2.conf` 同时更新，重启后经网关 `aria2.getVersion` 仍返回 Core 1.36.0，AriaNg 显示「已连接」 |
+| 非法输入 | RPC 端口与 BT 端口相同、下载目录越界（`/etc/...`）、密钥过短三种提交均被拒绝（返回 `code 10000`），配置未被改写 |
+| 单元测试 | `go vet` 与 `go test` 在 ubuntu-24.04 runner 通过，覆盖端口范围与互斥、密钥字符集、目录越界、空值保持、安装期创建、配置回读、密钥未变化判定 |
+
+一处框架限制：配置流程失败时，App Center 返回的 `msg` 是 `15002:exit code: 1`，没有带出
+脚本写入 `TRIM_TEMP_LOGFILE` 的中文原因（安装流程会带出）。脚本侧已同时写 stderr 与
+`TRIM_TEMP_LOGFILE`，该文案是否展示由飞牛决定，应用侧无法进一步控制。
 
 ## ARM64 (aarch64) 版本（实验性，未设备验收）
 
@@ -293,7 +303,7 @@ ubuntu runner 上执行）；`go vet` 通过；x86_64 与 ARM64 包均完成解�
 
 | 组件 | 大小 | SHA-256 |
 |---|---|---|
-| `aria2-manager` (arm64) | 7,209,120 B | `34B137715C613FB22B9E024F475561C0B334681D93BC62EDCFB2886DBAC76C96` |
+| `aria2-manager` (arm64) | 7,209,120 B | `F850417802F034642C111AB60029E8830744ABC941E3D1D4CDE84996B102987E` |
 | `aria2-hook` (arm64) | 2,687,136 B | `810533B807E3E376AB09E2960DD9DCA0C53EBECC23C753C93AB391FEDDAC459B` |
 | `aria2c` (arm64) | 10,070,168 B | `57097DA852528679971FA2BD43EBA7DD0742F72EE7538B6FD05053CB6D048627` |
 
@@ -303,8 +313,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,414,235 B，外层 SHA-256
-`9B24D8C76828DC70100F9D4D2FE88A5D30B6FE04EB606C6B84B9CB28494F3820`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,414,446 B，外层 SHA-256
+`FEC84033B93629957315DA06FE2737CCD3FDC642708A486DC9FFE31C8F8D0B03`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，

@@ -205,20 +205,36 @@ func TestApplyWizardKeepsExistingValuesWhenFieldsEmpty(t *testing.T) {
 }
 
 // TestApplyWizardReportsNoChangeForIdenticalInput 保证“原样保存”不会触发重启：
-// 配置与密钥都没变化时必须返回 changed=false。
+// 配置与密钥都没变化时必须返回 changed=false。飞牛会把上次提交的密钥原样回填并再次
+// 提交，因此“提交了密钥”不能直接等同于“密钥变了”。
 func TestApplyWizardReportsNoChangeForIdenticalInput(t *testing.T) {
 	configPath, secretPath, _ := wizardEnv(t)
 	t.Setenv(wizardFieldRPCPort, "6900")
 	t.Setenv(wizardFieldListenPort, "6999")
 	t.Setenv(wizardFieldSpecialMode, "off")
+	t.Setenv(wizardFieldRPCSecret, "abcdefghijklmnop1234")
 	if _, changed, err := applyWizardInput(configPath, secretPath, true); err != nil || !changed {
 		t.Fatalf("首次写入应有变更: changed=%v err=%v", changed, err)
 	}
-	// 第二次提交完全相同的取值。
+	// 第二次提交完全相同的取值，包括被回填的密钥。
 	if _, changed, err := applyWizardInput(configPath, secretPath, false); err != nil {
 		t.Fatalf("二次写入: %v", err)
 	} else if changed {
 		t.Fatal("取值未变化时不应报告变更")
+	}
+	// 真正换一个密钥时必须报告变更。
+	t.Setenv(wizardFieldRPCSecret, "zyxwvutsrqponmlk9876")
+	if _, changed, err := applyWizardInput(configPath, secretPath, false); err != nil {
+		t.Fatalf("三次写入: %v", err)
+	} else if !changed {
+		t.Fatal("密钥变化时必须报告变更")
+	}
+	secret, err := os.ReadFile(secretPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(secret) != "zyxwvutsrqponmlk9876" {
+		t.Fatalf("secret not rotated: %q", secret)
 	}
 }
 
