@@ -25,15 +25,25 @@ const (
 )
 
 const (
-	// minRPCSecretLength 与 aria2 默认配置无关，是本项目的下限：RPC 只监听回环地址，
-	// 但密钥同时是网关之外唯一的第二道门槛，16 位随机字符已远超暴力破解成本。
-	minRPCSecretLength = 16
-	maxRPCSecretLength = 64
+	// minRPCSecretLength 是本项目的下限，与 aria2 默认值无关：RPC 只监听回环地址，
+	// 外部访问必须先过飞牛网关鉴权，因此这里只做“别用空口令”的最低成本约束。
+	//
+	// 原先取 16 且字符集限定 [A-Za-z0-9._-]，实测把常见口令（如 Vinson@2024、
+	// 9 位以内的旧口令）全部挡在门外，而应用中心的配置流程失败时只回
+	// “15002: exit code: 1”，用户看到的是“保存成功 + 服务异常”，根本不知道是
+	// 密钥不合规。下限降到 8，字符集放宽到可见 ASCII。
+	minRPCSecretLength = 8
+	maxRPCSecretLength = 128
 )
 
-// rpcSecretPattern 限制密钥字符集。aria2.conf 由 shell 逐行写出，含空格、引号、
-// 反斜杠或换行的取值会截断行或引入额外选项，因此这类字符必须在入口处拒绝。
-var rpcSecretPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+// rpcSecretPattern 限制密钥字符集。
+//
+// 依据 aria2 自身的配置解析（src/OptionParser.cc）：配置行按第一个 '=' 切分，取值
+// 原样保留到行尾，不做引号或反斜杠处理，只有行首 '#' 才是注释。因此除换行（会截断行）
+// 与空白（易被误复制、也会让值带上不可见差异）以外，可见 ASCII 都是安全的。
+// 中文等非 ASCII 取值在 shell heredoc 与配置文件里同样可行，但复制粘贴时容易带上
+// 全角符号导致客户端连不上，这里直接从入口排除，避免“改完连不上”的排查成本。
+var rpcSecretPattern = regexp.MustCompile(`^[\x21-\x7E]+$`)
 
 func validRPCSecret(secret string) bool {
 	if len(secret) < minRPCSecretLength || len(secret) > maxRPCSecretLength {
@@ -144,7 +154,7 @@ func applyWizardInput(configPath, secretPath string, initial bool) ([]string, bo
 	// 密钥先校验再落盘配置文件：密钥不合法时不应留下“配置已改、重启后仍连不上”的中间态。
 	submittedSecret, secretProvided := wizardValue(wizardFieldRPCSecret)
 	if secretProvided && !validRPCSecret(submittedSecret) {
-		return nil, false, fmt.Errorf("RPC 密钥需为 16-%d 位字母、数字、点、下划线或连字符", maxRPCSecretLength)
+		return nil, false, fmt.Errorf("RPC 密钥需为 %d-%d 位可见字符（字母、数字或符号，不含空格）", minRPCSecretLength, maxRPCSecretLength)
 	}
 
 	configChanged, err := writeWizardConfig(configPath, value)
@@ -324,7 +334,7 @@ func applyWizardSecret(secretPath, submitted string) (bool, string, error) {
 	}
 	if submitted != "" {
 		if !validRPCSecret(submitted) {
-			return false, "", fmt.Errorf("RPC 密钥需为 16-%d 位字母、数字、点、下划线或连字符", maxRPCSecretLength)
+			return false, "", fmt.Errorf("RPC 密钥需为 %d-%d 位可见字符（字母、数字或符号，不含空格）", minRPCSecretLength, maxRPCSecretLength)
 		}
 		if existing, err := os.ReadFile(secretPath); err == nil && strings.TrimSpace(string(existing)) == submitted {
 			return false, "", nil

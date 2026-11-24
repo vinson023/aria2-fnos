@@ -37,11 +37,14 @@ valid_port "$dht_port" || fail "DHT 监听端口必须是 1024-65535 之间的�
 
 secret="${wizard_rpc_secret:-}"
 if [ -n "$secret" ]; then
-    [ "${#secret}" -ge 16 ] && [ "${#secret}" -le 64 ] || \
-        fail "RPC 密钥需为 16-64 位字母、数字、点、下划线或连字符。"
-    case "$secret" in
-        *[!A-Za-z0-9._-]*) fail "RPC 密钥只能包含字母、数字、点、下划线或连字符。" ;;
-    esac
+    # 与 aria2-manager 的校验保持一致：下限 8 位，上限 128 位，只接受可见 ASCII
+    # （0x21-0x7E，即不含空格与控制字符）。aria2 的配置解析按行原样保留取值，
+    # 符号本身无害；换行会插入新配置项，空白会让值带上不可见差异，因此排除。
+    [ "${#secret}" -ge 8 ] && [ "${#secret}" -le 128 ] || \
+        fail "RPC 密钥需为 8-128 位可见字符（字母、数字或符号，不含空格）。"
+    if [ "$(printf '%s' "$secret" | LC_ALL=C tr -d '\041-\176' | wc -c)" -ne 0 ]; then
+        fail "RPC 密钥只能包含可见字符（字母、数字或符号），不能有空格或中文。"
+    fi
 fi
 
 mode="${wizard_special_mode:-move}"

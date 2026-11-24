@@ -28,12 +28,16 @@ func wizardEnv(t *testing.T) (configPath, secretPath, share string) {
 }
 
 // TestValidRPCSecretPattern 与平台无关，任何架构都必须通过同一套字符集校验：
-// aria2.conf 由 shell 逐行写出，密钥里出现空白或引号会破坏该文件。
+// aria2.conf 的取值按行原样保留（只有行首 '#' 是注释），因此换行与空白是真正的
+// 破坏因素；符号（@ ! # $ 等）是安全的，曾经把它们拒之门外反而导致用户改不了密钥。
 func TestValidRPCSecretPattern(t *testing.T) {
 	good := []string{
-		"abcdefghijklmnop",
-		"0123456789abcdef0123456789abcdef0123456789abcdef",
+		"abcdefgh",    // 下限 8 位
+		"vinson520",   // 常见的 9 位口令
+		"Vinson@2024", // 符号
 		"Abc-123_def.4567",
+		"p@ss!w0rd#1$", // # 与 $ 在配置行里是普通字符
+		strings.Repeat("a", maxRPCSecretLength),
 	}
 	for _, secret := range good {
 		if !validRPCSecret(secret) {
@@ -42,12 +46,13 @@ func TestValidRPCSecretPattern(t *testing.T) {
 	}
 	bad := []string{
 		"",
-		"short",
-		"abcdefghijklmno",    // 15 位
-		"abcdefgh ijklmnop",  // 空格
-		"abcdefgh\"ijklmnop", // 引号
-		"abcdefgh#ijklmnop",  // 井号会被当成注释
-		"abcdefghijklmnop$",  // 会触发 shell 展开
+		"short",                  // 5 位，低于下限
+		"abcdefg",                // 7 位
+		"abcdefgh ijklmnop",      // 空格
+		"abcdefgh\tijklmnop",     // 制表符
+		"abcdefghijklmnop\r",     // 回车会插入新行
+		"abcdefghijklmnop\npath", // 换行会引入额外配置项
+		"密钥密钥密钥密钥",               // 非 ASCII
 		strings.Repeat("a", maxRPCSecretLength+1), // 超长
 	}
 	for _, secret := range bad {
