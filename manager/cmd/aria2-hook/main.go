@@ -17,6 +17,7 @@ import (
 )
 
 type config struct {
+	DownloadRoot    string   `json:"download_root"`
 	ArchiveEnabled  bool     `json:"archive_enabled"`
 	ArchiveRoot     string   `json:"archive_root"`
 	SpecialMode     string   `json:"special_mode"`
@@ -53,6 +54,30 @@ func rootsFrom(value string) []string {
 func authorizedRoots(value config) []string {
 	roots := make([]string, 0, len(value.AuthorizedRoots))
 	for _, root := range value.AuthorizedRoots {
+		if !strings.HasPrefix(root, "/vol") || strings.ContainsAny(root, "\x00\r\n\\\"") {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(root)
+		if err != nil || !filepath.IsAbs(resolved) {
+			continue
+		}
+		info, err := os.Stat(resolved)
+		if err == nil && info.IsDir() {
+			roots = append(roots, resolved)
+		}
+	}
+	return roots
+}
+
+// configuredRoots 返回配置里显式选定的下载根与归档根。
+//
+// 用户把下载目录改到随包共享目录之外（例如 /vol1/1000/downloads）以后，只有这两条
+// 路径能界定“哪些文件属于本应用的任务”。缺了它们，回调会把每次已完成的任务判成
+// “download path cannot be resolved”，归档与清理被整体跳过——表现为下载完成但文件
+// 从不移动到 completed。
+func configuredRoots(value config) []string {
+	roots := make([]string, 0, 2)
+	for _, root := range []string{value.DownloadRoot, value.ArchiveRoot} {
 		if !strings.HasPrefix(root, "/vol") || strings.ContainsAny(root, "\x00\r\n\\\"") {
 			continue
 		}
@@ -424,6 +449,11 @@ func loadConfig(path string) (config, error) {
 		return config{}, err
 	}
 	var value config
+	if encoded, ok := raw["download_root"]; ok {
+		if err := json.Unmarshal(encoded, &value.DownloadRoot); err != nil {
+			return config{}, err
+		}
+	}
 	if encoded, ok := raw["archive_enabled"]; ok {
 		if err := json.Unmarshal(encoded, &value.ArchiveEnabled); err != nil {
 			return config{}, err
@@ -461,7 +491,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// 允许的路径集合 = 随包共享目录 + 授权目录 + 配置里选定的下载/归档根。
+	// 最后一项不可省略：用户把下载目录换到 /vol<N>/<uid>/... 之后，前两项都不含该路径，
+	// 归档会因“路径无法解析”被静默跳过。
 	roots := append(rootsFrom(shares), authorizedRoots(value)...)
+	roots = append(roots, configuredRoots(value)...)
 	if len(roots) == 0 {
 		log.Fatal("no approved shared directory")
 	}

@@ -306,3 +306,35 @@ func TestLoadConfigReadsSpecialMode(t *testing.T) {
 		t.Fatalf("special mode not loaded: %#v", got)
 	}
 }
+
+// configuredRoots 必须覆盖配置里选定的下载根与归档根：用户把下载目录改到随包共享目录
+// 之外以后，回调只能靠这两条判断任务归属，否则每次完成都会判成“路径无法解析”。
+func TestConfiguredRootsIncludeDownloadAndArchiveRoots(t *testing.T) {
+	base, err := os.MkdirTemp("/vol1/@apptemp", "aria2-hook-test-")
+	if err != nil {
+		t.Skipf("需要可写的 /vol 路径才能验证：%v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	archiveRoot := filepath.Join(base, "completed")
+	if err := os.MkdirAll(archiveRoot, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	roots := configuredRoots(config{DownloadRoot: base, ArchiveRoot: archiveRoot})
+	if len(roots) != 2 {
+		t.Fatalf("expected download and archive roots, got %#v", roots)
+	}
+	if _, _, err := containedRoot(filepath.Join(base, "item.bin"), roots); err != nil {
+		t.Fatalf("下载根内的文件应可解析: %v", err)
+	}
+}
+
+// 只有数据卷内的绝对路径才算授权根：配置文件可被改写，越界路径不能凭空获得权限。
+func TestConfiguredRootsIgnoreUnsafeValues(t *testing.T) {
+	got := configuredRoots(config{
+		DownloadRoot: "/etc",
+		ArchiveRoot:  "relative/path",
+	})
+	if len(got) != 0 {
+		t.Fatalf("unexpected roots: %#v", got)
+	}
+}
