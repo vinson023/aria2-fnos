@@ -1,7 +1,62 @@
 #!/bin/bash
 
-# Phase 2 configuration skeleton. `wizard/config` is intentionally deferred:
-# its schema is not present in the fixed offline reference and must be verified
-# with the Phase 4 service configuration workflow before it is packaged.
+set -eu
+
+# 配置变更（应用中心「应用设置」）分两步：config_init 只校验输入，config_callback 落盘并
+# 重启服务。两步共用与安装向导完全一致的校验口径，避免“安装能填、设置不能填”。
+fail() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        printf '%s\n' "$1" > "$TRIM_TEMP_LOGFILE" 2>/dev/null || true
+    fi
+    printf '%s\n' "$1" >&2
+    exit 1
+}
+
+valid_port() {
+    value="$1"
+    case "$value" in
+        *[!0-9]*|'')
+            return 1
+            ;;
+    esac
+    [ "$value" -ge 1024 ] && [ "$value" -le 65535 ]
+}
+
+rpc_port="${wizard_rpc_port:-6800}"
+listen_port="${wizard_listen_port:-6888}"
+dht_port="${wizard_dht_listen_port:-$listen_port}"
+
+valid_port "$rpc_port" || fail "RPC 监听端口必须是 1024-65535 之间的整数。"
+valid_port "$listen_port" || fail "BT 监听端口必须是 1024-65535 之间的整数。"
+valid_port "$dht_port" || fail "DHT 监听端口必须是 1024-65535 之间的整数。"
+[ "$rpc_port" != "$listen_port" ] || fail "RPC 监听端口不能与 BT 监听端口相同。"
+
+secret="${wizard_rpc_secret:-}"
+if [ -n "$secret" ]; then
+    [ "${#secret}" -ge 16 ] && [ "${#secret}" -le 64 ] || \
+        fail "RPC 密钥需为 16-64 位字母、数字、点、下划线或连字符。"
+    case "$secret" in
+        *[!A-Za-z0-9._-]*) fail "RPC 密钥只能包含字母、数字、点、下划线或连字符。" ;;
+    esac
+fi
+
+mode="${wizard_special_mode:-move}"
+case "$mode" in
+    move|off|keep) ;;
+    *) fail "下载完成后自动归档只能选择开启、关闭或保持当前设置。" ;;
+esac
+
+download_root="${wizard_download_root:-}"
+if [ -n "$download_root" ]; then
+    case "$download_root" in
+        /*) ;;
+        *) fail "下载文件夹必须是绝对路径，例如 /vol1/1000/downloads。" ;;
+    esac
+    case "$download_root" in
+        *'"'*|*'\'*|*$'\n'*|*$'\r'*)
+            fail "下载文件夹路径不能包含引号、反斜杠或换行。"
+            ;;
+    esac
+fi
 
 exit 0

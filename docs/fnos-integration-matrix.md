@@ -9,7 +9,7 @@
 | 应用识别与版本 | `manifest` | FPK 外壳 | 是 | 固定 `appname`、版本、架构、网关入口和运行策略 |
 | 应用专属用户 | `config/privilege` | FPK 外壳/fnOS | 是 | 生命周期钩子以 root 初始化受限目录；`cmd/main` 使用 `start-stop-daemon --chuid aria2` 启动常驻服务，服务不以 root 运行 |
 | 下载共享目录 | `config/resource` 的 `data-share` | FPK 外壳/fnOS | D-003 已确认 | 由 fnOS 创建并授权，路径通过 `TRIM_DATA_SHARE_PATHS` 获取 |
-| 安装/配置输入 | `wizard/install`、`wizard/config` | FPK 外壳/fnOS | 是 | 端口、模式等字段需在生命周期脚本中再次校验 |
+| 安装/配置输入 | `wizard/install`、`wizard/config` | FPK 外壳/fnOS | 是 | `0.2.4` 起两张表单共用六个字段（RPC/BT/DHT 端口、RPC 密钥、`SPECIAL_MODE`、下载目录）；`*_init` 先校验，`*_callback` 调 `aria2-manager --apply-wizard` 落盘，`config_callback` 按需重启 |
 | 桌面打开入口 | `app/ui/config` | FPK 外壳/fnOS | 是 | 使用 `type=iframe`，统一网关前缀为 `/app/aria2` |
 | 登录态校验 | 统一网关 | fnOS | 是 | 网关先校验会话，再通过 Unix Socket 转发 |
 | 当前用户身份 | `X-Trim-*` Header | 管理器 | 是 | 只信任网关转发的身份上下文，不信任浏览器自带 Header |

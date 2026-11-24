@@ -2,15 +2,17 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.3`，11,160,627 B；GitHub Release 中名为 `aria2-0.2.3-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,629,756 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`531FFE273CE16D25FAEB116A70ED728655DED66F3369F8AC50FB04A7F31DBCE4`
-  （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准。
-  2026-10-22 为发布重建过一次，外层由 11,160,550 B / `38A11322…F15C` 变为当前值，
-  但解包后 49 个文件与记录清单逐字节一致）
+- FPK 外层 SHA-256：`06988A3E8880F2DBD6B6154855277E1620EAED9F242672F8B3C8DDC74B82C93F`
+  （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
   （见 `docs/adr/ADR-018-identity-rename-and-archive-automation.md`）。
+- `0.2.4` 新增：安装向导可设置 RPC/BT/DHT 三个端口、RPC 密钥、下载完成后自动归档
+  （`SPECIAL_MODE`）与下载文件夹路径；新增 `wizard/config`，安装完成后可在应用中心
+  「应用设置」里修改同一组参数，保存后按需自动重启生效。落盘、校验与目录创建统一收口到
+  `aria2-manager --apply-wizard`（见 `docs/adr/ADR-019-wizard-configurable-parameters.md`）。
 - `0.2.3` 修复：AriaNg 连接提示与安装向导文案仍显示「Aria2 Pro」——飞牛定制版设置加载
   函数把 RPC 别名写死为 `"Aria2 Pro"`，本版改为 `"Aria2"`，并同步两处安装向导端口校验提示。
 - `0.2.2` 修复：AriaNg 原生「基本设置」页面仍显示「归档目录」和「下载完成后归档」字段，
@@ -21,15 +23,19 @@
 - Core：Aria2 1.36.0 加同一组 4 个补丁，**完全静态链接**（musl），10,739,352 B，
   SHA-256 `A482FB24722B87A0A719ACEE330E329D6DFA21075808C66202E451782812015B`
   （自 `0.1.95` 起逐字节未变）。
-- 管理器：静态 Go x86_64，7,245,986 B（0.2.1 重编译，含归档降级逻辑）。
-- 回调：静态 Go x86_64，3,486,852 B，
-  SHA-256 `32582906FAD6BF779F7774681F021CC2E5ACC21BBB8DC82AEA49ECF0C2E5D35A`。
+- 管理器：静态 Go x86_64，7,790,752 B（`0.2.4` 重新编译，含向导配置写入逻辑），
+  SHA-256 `7FFC04FEF83DE0C8FF1BDF987C43369FEFDEE71487A50BBC4E0F8F184ED8C0E9`。
+- 回调：静态 Go x86_64，2,793,632 B，
+  SHA-256 `A92A9162732788E190EEEED2325991A7E8118146A999205C57E48338B4A4A694`。
+  Go 二进制自 `0.2.4` 起带 `-ldflags="-s -w"` 构建，体积较此前版本明显下降，行为不变。
 - AriaNg：1.3.14 fnOS 适配 bundle（网关路径已改为 `/app/aria2/jsonrpc`）；构建时使用 Node，运行时仅静态文件。
   `0.2.2` 起 `basicOptions` 数组不再包含 `special-mode` 和 `fnos-archive-dir`；
   `0.2.3` 起 RPC 别名默认值由 `Aria2 Pro` 改为 `Aria2`。
 - SDK：固定 `@trimjs/web-app@0.4.2`，仅纳入静态 `dist/index.js`；FPK Scope 为 `trim.file.userAccess`、`trim.file.sharedAccess`，manifest `micro_app=true`。
 
-本版溯源清单：`build-output/fpk-0.2.3.inner.SHA256SUMS`（49 个文件）。
+本版溯源清单：`build-output/fpk-0.2.4.inner.SHA256SUMS`（49 个文件）。
+外层 `wizard/` 目录自 `0.2.4` 起多出 `wizard/config`（应用设置表单），它不在 `app.tgz` 内，
+因此内层文件数仍为 49。
 
 ## 已验证
 
@@ -244,15 +250,51 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 （`aria2.pid`/`manager.pid` 属主应为 `aria2`）**尚未在容器内跑过**，其余三条链路
 （含启动锁释放与 multicall 用例 E）在事故之前已全部通过。测试机恢复后需补跑。
 
+## `0.2.4`：六个运行参数可在安装向导与应用设置中修改（2026-11-24）
+
+此前只有 RPC 端口与 BT 监听端口能在安装时指定，`wizard/config`、`cmd/config_init`、
+`cmd/config_callback` 均为空壳，DHT 端口、RPC 密钥、归档模式与下载目录只能手工改
+`config.json`。`0.2.4` 把六项参数统一收口（决策见 ADR-019）：
+
+| 参数 | 向导字段 | 安装默认值 | 应用设置中的空值语义 |
+|---|---|---|---|
+| RPC 监听端口 | `wizard_rpc_port` | `6800` | 留空 = 保持当前值 |
+| BT 监听端口 | `wizard_listen_port` | `6888` | 留空 = 保持当前值 |
+| DHT 监听端口 | `wizard_dht_listen_port` | 同 BT 端口 | 留空 = 保持当前值 |
+| RPC 密钥 | `wizard_rpc_secret` | 留空自动生成 48 位 | 留空 = 不修改 |
+| 自动归档（`SPECIAL_MODE`） | `wizard_special_mode` | `move`（开启） | 单选「保持当前设置 / 开启 / 关闭」 |
+| 下载文件夹 | `wizard_download_root` | 飞牛数据共享目录 | 留空 = 保持当前值 |
+
+实现要点：
+
+- 校验与落盘集中在 `aria2-manager --apply-wizard`，复用常规配置路径的端口互斥、
+  下载目录授权范围、归档目录派生与属主继承逻辑；`install_init`/`config_init` 的
+  shell 校验是同一口径的提前反馈（安装阶段二进制尚未落地，无法调用管理器）。
+- RPC 密钥下限由 32 位放宽到 16 位，限定 `[A-Za-z0-9._-]`。`aria2.conf` 由 shell 逐行
+  写出，含空白、引号、反斜杠或 `#` 的取值会破坏文件，因此在入口拒绝，而不是让它
+  “看起来保存成功、重启后连不上”。
+- 下载目录允许尚不存在：在已授权根内逐级创建，新建目录属主跟随上级目录，避免 root
+  建出应用用户无法穿越的中间目录。
+- `config_callback` 在服务运行时执行一次受控重启（约 8 秒）使新端口/密钥/目录生效；
+  应用未运行时跳过重启，配置在下次启动时读取。
+
+**验证状态：** 单元测试覆盖端口范围与互斥、密钥字符集与长度、目录越界拒绝、
+空值保持、安装期创建、配置回读（`manager/cmd/aria2-manager/wizard_test.go`，在
+ubuntu runner 上执行）；`go vet` 通过；x86_64 与 ARM64 包均完成解包校验
+（49 个内层文件 + 外层 `wizard/config`，三个原生二进制架构正确）。**尚未在设备上
+验证安装向导表单渲染、应用设置页渲染与保存后重启生效**——测试机 SSH 在本次开发窗口
+内不可达。
+
 ## ARM64 (aarch64) 版本（实验性，未设备验收）
 
-`0.2.3` 起新增 ARM64 构建支持。Go 管理器与回调用本机 Go 1.26.9 交叉编译
-（`GOOS=linux GOARCH=arm64 CGO_ENABLED=0`），产物已验证为 ELF aarch64：
+`0.2.3` 起新增 ARM64 构建支持。Go 管理器与回调用本机 Go 交叉编译
+（`GOOS=linux GOARCH=arm64 CGO_ENABLED=0`），产物已验证为 ELF aarch64。
+`0.2.4` 起 Go 二进制统一改为 `-ldflags="-s -w"` 构建，因此体积与哈希相对 `0.2.3` 变化：
 
 | 组件 | 大小 | SHA-256 |
 |---|---|---|
-| `aria2-manager` (arm64) | 9,734,536 B | `C32CB4025E576E7FEDD7C5D9E666A27D508E360B67E6D539A0D4252789DD7762` |
-| `aria2-hook` (arm64) | 3,307,012 B | `52B62393AC2B66B6E40480925357FFCBA540528B12A5B19108383617E38D6379` |
+| `aria2-manager` (arm64) | 7,209,120 B | `30BA19D16A516EC4EE819FE8DC1C337741D36F0CF2BEC5BFA7A4969D377E6A87` |
+| `aria2-hook` (arm64) | 2,687,136 B | `810533B807E3E376AB09E2960DD9DCA0C53EBECC23C753C93AB391FEDDAC459B` |
 | `aria2c` (arm64) | 10,070,168 B | `57097DA852528679971FA2BD43EBA7DD0742F72EE7538B6FD05053CB6D048627` |
 
 ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中构建
@@ -261,8 +303,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-产物 `aria2-arm64.fpk`（13,449,441 B，外层 SHA-256
-`D4940DC5E9536FB2ADEC6C5A12CAAF714E4A6AAD60DFAD025C9CBDF7D7B0DCBA`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,414,147 B，外层 SHA-256
+`867241A637F9445B6A3D5754B4D9131C0F145CBE3C2F42696A46B7D3F41A446C`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，

@@ -1,5 +1,54 @@
 #!/bin/bash
 
-# Phase 2 configuration skeleton. No running service is restarted yet.
+set -eu
+
+: "${TRIM_APPDEST:?TRIM_APPDEST is required}"
+: "${TRIM_PKGETC:?TRIM_PKGETC is required}"
+: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+
+fail() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        printf '%s\n' "$1" > "$TRIM_TEMP_LOGFILE" 2>/dev/null || true
+    fi
+    printf '%s\n' "$1" >&2
+    exit 1
+}
+
+app_root="$TRIM_APPDEST"
+if [ -x "$app_root/target/server/aria2-manager" ]; then
+    app_root="$app_root/target"
+fi
+
+# 与安装流程同一个落盘入口：只覆盖用户提交的字段，未填写的端口、密钥、下载目录保持原值。
+if ! apply_output=$("$app_root/server/aria2-manager" --apply-wizard \
+        --config "$TRIM_PKGETC/config.json" --secret "$TRIM_PKGETC/rpc.secret" 2>&1); then
+    fail "${apply_output:-保存应用配置失败。}"
+fi
+printf '%s\n' "$apply_output" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    printf '%s\n' "$line" >> "$TRIM_PKGVAR/startup.log"
+done 2>/dev/null || true
+
+# 生命周期脚本可能以 root 身份执行，恢复专属用户属主与最小权限，避免下次启动读不到配置。
+chown aria2:aria2 "$TRIM_PKGETC/config.json" "$TRIM_PKGETC/rpc.secret" 2>/dev/null || true
+chmod 600 "$TRIM_PKGETC/config.json" "$TRIM_PKGETC/rpc.secret" 2>/dev/null || true
+
+# 端口、密钥与下载目录都写进 aria2.conf，只有重启后才会生效。应用未运行时不必重启，
+# 配置会在下次启动时直接被读取。
+pid_file="$TRIM_PKGVAR/manager.pid"
+if [ -r "$pid_file" ]; then
+    pid=$(cat "$pid_file" 2>/dev/null || true)
+    case "$pid" in
+        *[!0-9]*|'') pid="" ;;
+    esac
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        lifecycle_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+        if ! restart_output=$("$lifecycle_dir/main" restart 2>&1); then
+            printf '%s\n' "$restart_output" >> "$TRIM_PKGVAR/startup.log" 2>/dev/null || true
+            fail "设置已保存，但自动重启失败，请在应用中心手动重启应用。"
+        fi
+        printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') 应用设置已更新并重启生效" >> "$TRIM_PKGVAR/startup.log" 2>/dev/null || true
+    fi
+fi
 
 exit 0

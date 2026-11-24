@@ -1,7 +1,7 @@
 # 飞牛版 Aria2
 
 原生飞牛 fnOS FPK：集成 Aria2 Core、Go 管理器和 AriaNg。当前 x86_64 候选包为
-`0.2.3`，运行时不依赖 Docker、Node.js、Python 或数据库，也不再依赖宿主的任何共享库。
+`0.2.4`，运行时不依赖 Docker、Node.js、Python 或数据库，也不再依赖宿主的任何共享库。
 <img width="1457" height="834" alt="image" src="https://github.com/user-attachments/assets/68ca58a0-fc10-49b2-8f98-5411c29b79de" />
 
 
@@ -90,10 +90,15 @@
 
 ## 当前状态
 
-最新候选包为 `0.2.3`（x86_64），相对 `0.2.0` 的三处界面/文案修复：归档目录字段从 AriaNg
-基本设置页移除（`0.2.2`）、归档目录创建失败时降级而非阻塞保存（`0.2.1`）、连接提示与安装
-向导文案统一为「Aria2」（`0.2.3`）。完整版本历史、产物指纹与逐文件溯源清单见
-[候选发布物](docs/release-candidate.md)。
+最新候选包为 `0.2.4`（x86_64 与 ARM64），相对 `0.2.3` 的主要变化是新增应用设置入口：
+
+- 安装向导新增 DHT 监听端口、RPC 密钥、下载完成后自动归档（`SPECIAL_MODE`）、下载文件夹路径；
+- 新增 `wizard/config`，安装完成后可在应用中心「应用设置」里修改同一组参数，保存后按需自动重启生效；
+- 落盘逻辑统一收口到 `aria2-manager --apply-wizard`，端口、密钥、目录校验与常规配置路径同源。
+
+`0.2.3` 及更早的三处界面/文案修复保持不变：归档目录字段从 AriaNg 基本设置页移除（`0.2.2`）、
+归档目录创建失败时降级而非阻塞保存（`0.2.1`）、连接提示与安装向导文案统一为「Aria2」（`0.2.3`）。
+完整版本历史、产物指纹与逐文件溯源清单见 [候选发布物](docs/release-candidate.md)。
 
 ARM64 (aarch64) 版本支持已加入：Go 管理器已交叉编译验证，`aria2c` 静态核心由 GitHub Actions
 构建。详见 [候选发布物 ARM64 段落](docs/release-candidate.md#arm64-aarch64-版本实验性未设备验收)。

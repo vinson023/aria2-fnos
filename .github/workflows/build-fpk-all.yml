@@ -83,8 +83,8 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          go build -trimpath -o /tmp/aria2-manager-${{ matrix.goarch }} ./cmd/aria2-manager/
-          go build -trimpath -o /tmp/aria2-hook-${{ matrix.goarch }} ./cmd/aria2-hook/
+          go build -trimpath -ldflags="-s -w" -o /tmp/aria2-manager-${{ matrix.goarch }} ./cmd/aria2-manager/
+          go build -trimpath -ldflags="-s -w" -o /tmp/aria2-hook-${{ matrix.goarch }} ./cmd/aria2-hook/
 
       - name: Upload Go binaries
         uses: actions/upload-artifact@v4

@@ -1,0 +1,38 @@
+# 在 Linux runner 上执行 Go 单元测试。部分用例（向导配置、路径解析）显式依赖类 Unix
+# 路径语义，开发机为 Windows 时会自动跳过，因此必须依赖 CI 覆盖。
+name: Go Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'manager/**'
+      - '.github/workflows/test.yml'
+  pull_request:
+    paths:
+      - 'manager/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: go vet + go test (linux/amd64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: manager/go.mod
+
+      - name: go vet
+        working-directory: manager
+        run: go vet ./...
+
+      - name: go test
+        working-directory: manager
+        run: go test -count=1 ./...

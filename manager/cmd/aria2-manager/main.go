@@ -92,6 +92,21 @@ func parseConfigData(data []byte, targetVersion *int) (config, []string, error) 
 		changes = migrateLegacyConfig(data, &value)
 		value.ConfigVersion = *targetVersion
 	}
+	applyConfigDefaults(&value, data)
+	if !validPort(value.RPCPort) || !validPort(value.ListenPort) || !validPort(value.DHTListenPort) || value.RPCPort == value.ListenPort {
+		return config{}, nil, errors.New("invalid or conflicting ports")
+	}
+	if err := prepareConfig(&value); err != nil {
+		return config{}, nil, err
+	}
+	return value, changes, nil
+}
+
+// applyConfigDefaults 给缺失字段补上随包默认值。raw 为配置原始字节，用于区分
+// “未写该键”与“显式写成 false”：tracker_auto_update 只有在键不存在时才补 true，
+// 否则用户关掉的自动更新会在每次读取时被悄悄打开。raw 为空时按“键不存在”处理，
+// 供安装向导创建全新配置复用同一套默认值。
+func applyConfigDefaults(value *config, rawData []byte) {
 	if value.DHTMessageTimeout == "" {
 		value.DHTMessageTimeout = "10"
 	}
@@ -101,19 +116,16 @@ func parseConfigData(data []byte, targetVersion *int) (config, []string, error) 
 	if value.TrackerSource == "" {
 		value.TrackerSource = trackerSources[0]
 	}
+	if len(rawData) == 0 {
+		value.TrackerAutoUpdate = true
+		return
+	}
 	var raw map[string]json.RawMessage
-	if json.Unmarshal(data, &raw) == nil {
+	if json.Unmarshal(rawData, &raw) == nil {
 		if _, ok := raw["tracker_auto_update"]; !ok {
 			value.TrackerAutoUpdate = true
 		}
 	}
-	if !validPort(value.RPCPort) || !validPort(value.ListenPort) || !validPort(value.DHTListenPort) || value.RPCPort == value.ListenPort {
-		return config{}, nil, errors.New("invalid or conflicting ports")
-	}
-	if err := prepareConfig(&value); err != nil {
-		return config{}, nil, err
-	}
-	return value, changes, nil
 }
 
 func loadConfig(path string) (config, error) {
@@ -1413,7 +1425,7 @@ func main() {
 	var configStdin bool
 	var configEnv string
 	var secretEnv string
-	var printDownloadRoot, ensurePorts, migrateConfig bool
+	var printDownloadRoot, ensurePorts, migrateConfig, applyWizard, wizardInitial bool
 	// 运行期覆盖文件与种子元数据台账写在持久化目录，卸载选择清空配置时由 uninstall_callback 一并删除。
 	defaultRuntimeOptions := ""
 	defaultTorrentLedger := ""
@@ -1436,6 +1448,8 @@ func main() {
 	flag.BoolVar(&printDownloadRoot, "print-download-root", false, "validate configuration and print the effective download root")
 	flag.BoolVar(&ensurePorts, "ensure-ports", false, "自动切换被占用的端口并持久化")
 	flag.BoolVar(&migrateConfig, "migrate-config", false, "按本版默认值迁移已有 config.json 后退出")
+	flag.BoolVar(&applyWizard, "apply-wizard", false, "把向导提交的 wizard_* 环境变量写入配置后退出")
+	flag.BoolVar(&wizardInitial, "wizard-initial", false, "安装流程：配置文件不存在时按默认值创建")
 	flag.StringVar(&runtimeOptionsPath, "runtime-options", defaultRuntimeOptions, "AriaNg 运行期全局选项的持久化文件")
 	flag.StringVar(&torrentLedgerPath, "torrent-ledger", defaultTorrentLedger, "RPC 上传种子元数据的 gid 台账文件")
 	flag.Parse()
@@ -1449,6 +1463,19 @@ func main() {
 		}
 		for _, change := range changes {
 			fmt.Println(change)
+		}
+		return
+	}
+	if applyWizard {
+		// 安装与应用设置共用这一个入口：校验、目录创建、配置与密钥落盘都在这里完成，
+		// 生命周期脚本只负责把用户可见的错误写进 TRIM_TEMP_LOGFILE 并按需重启。
+		notes, wizardErr := applyWizardInput(configPath, secretPath, wizardInitial)
+		if wizardErr != nil {
+			fmt.Fprintln(os.Stderr, wizardErr)
+			os.Exit(1)
+		}
+		for _, note := range notes {
+			fmt.Println(note)
 		}
 		return
 	}
@@ -1536,7 +1563,7 @@ func main() {
 		log.Fatal(err)
 	}
 	secret := strings.TrimSpace(string(secretBytes))
-	if len(secret) < 32 {
+	if len(secret) < minRPCSecretLength {
 		log.Fatal("invalid RPC secret")
 	}
 	if dropUser != "" {

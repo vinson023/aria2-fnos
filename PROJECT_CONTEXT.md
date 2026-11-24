@@ -45,8 +45,10 @@ Phase 2 当前进度：`fpk/manifest`、`config/privilege`、`config/resource`�
 网关入口、安装向导和生命周期脚本占位已完成；`fnpack 1.2.3` 已于 2026-08-27
 成功构建并校验 `aria2.fpk`。构建输出已确认包含必要 FPK 文件，且未执行测试机
 安装。此前模板遗留的 `.DS_Store` 已从源目录清理，并通过嵌套 `app.tgz` 检查确认不再
-进入归档。配置向导 `wizard/config` 因固定参考未
-提供独立 schema 且工具校验结果不明确，暂缓到 Phase 4 验证，不以猜测格式发布。
+进入归档。配置向导 `wizard/config` 在 `0.2.4` 落地：官方文档《用户向导》明确它是应用设置页表单，
+字段值以环境变量注入 `config_init`/`config_callback`；本地快照的前端 bundle 也确认了
+`GET/POST /v1/config/wizard` 接口，但接口是否回填上次提交值没有文档说明，因此表单按
+“空值 = 不修改”设计（ADR-019）。
 测试机只读连通性检查：`192.168.x.x:22` 和 `192.168.x.x:5666` 可达。已通过
 PuTTY `plink` 完成设备侧只读检查：设备为 Debian 12、x86_64、fnOS 内核
 `6.18.18.c952-trim`；系统提供 `fnpack 1.2.4` 和 `appcenter-cli`。普通 SSH 管理员
