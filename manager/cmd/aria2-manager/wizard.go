@@ -130,8 +130,11 @@ func applyWizardInput(configPath, secretPath string, initial bool) ([]string, bo
 		return nil, false, describeWizardError(value, err)
 	}
 	// prepareConfig 会按实际情况修正归档开关，这里以修正后的结果为准。
-	if value.DownloadRoot != "" && !allowedDownloadRoot(value.DownloadRoot, approved) {
-		return nil, false, errors.New("下载文件夹必须位于飞牛共享目录或已授权的目录内")
+	if value.DownloadRoot != "" {
+		resolved, resolveErr := resolveDirectory(value.DownloadRoot)
+		if resolveErr != nil || !downloadRootAllowed(resolved, approved) {
+			return nil, false, errors.New("下载文件夹必须位于飞牛数据卷内")
+		}
 	}
 	if value.AuthorizedRoots == nil {
 		// 用空数组而不是 null 落盘，保持与安装脚本写出的形态一致。
@@ -240,7 +243,7 @@ func describeWizardError(value config, err error) error {
 	message := err.Error()
 	switch {
 	case strings.Contains(message, "download root is outside approved shared directories"):
-		return errors.New("下载文件夹必须位于飞牛共享目录或已授权的目录内")
+		return errors.New("下载文件夹必须位于飞牛数据卷（/vol1、/vol2 等）内")
 	case strings.Contains(message, "invalid or conflicting ports"):
 		return errors.New("端口取值不合法，或 RPC 端口与 BT 监听端口相同")
 	default:
@@ -284,8 +287,8 @@ func ensureWizardDownloadRoot(root string, approved []string) error {
 	if statErr != nil || !ancestorInfo.IsDir() {
 		return errors.New("下载文件夹的上级目录不存在")
 	}
-	if !allowedDownloadRoot(ancestor, approved) {
-		return errors.New("下载文件夹必须位于飞牛共享目录或已授权的目录内")
+	if !downloadRootAllowed(ancestor, approved) {
+		return errors.New("下载文件夹必须位于飞牛数据卷内")
 	}
 	parentInfo := ancestorInfo
 	for _, dir := range missing {
@@ -294,7 +297,15 @@ func ensureWizardDownloadRoot(root string, approved []string) error {
 		}
 		// umask 可能削掉组写权限，显式固定为 0770 保证专属用户可以写入。
 		_ = os.Chmod(dir, 0o770)
-		adoptDirectoryOwnership(dir, parentInfo)
+		// 新建目录必须归专属用户所有：在 /vol1/1000 这类由管理员拥有的共享目录下，
+		// 若沿用上级目录属主，aria2 依然写不进去。
+		if uid, gid, ok := appUserIDs(); ok && os.Geteuid() == 0 {
+			if err := chownDirectory(dir, uid, gid); err != nil {
+				return fmt.Errorf("设置下载文件夹属主失败: %v", err)
+			}
+		} else {
+			adoptDirectoryOwnership(dir, parentInfo)
+		}
 		if created, statErr := os.Stat(dir); statErr == nil {
 			parentInfo = created
 		}

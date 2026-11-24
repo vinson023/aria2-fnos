@@ -169,10 +169,10 @@ func repairStartupConfig(rawData []byte) (config, []string, error) {
 		case err != nil:
 			notes = append(notes, fmt.Sprintf("下载目录 %s 在当前机器上不存在，已改用默认目录", value.DownloadRoot))
 			value.DownloadRoot = ""
-		case !allowedDownloadRoot(resolved, roots):
-			notes = append(notes, fmt.Sprintf("下载目录 %s 不在授权范围内，已改用默认目录", value.DownloadRoot))
+		case !downloadRootAllowed(resolved, roots):
+			notes = append(notes, fmt.Sprintf("下载目录 %s 不在可用的飞牛数据卷内，已改用默认目录", value.DownloadRoot))
 			value.DownloadRoot = ""
-		case !writableDirectory(resolved):
+		case !writableByAppUser(resolved):
 			notes = append(notes, fmt.Sprintf("下载目录 %s 对 aria2 用户不可写，已改用默认目录", value.DownloadRoot))
 			value.DownloadRoot = ""
 		default:

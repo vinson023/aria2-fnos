@@ -2,9 +2,9 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.4`，10,630,432 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,641,694 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`ACD5B648F219891B0831EEFAEEB496EE8920DE4F03EEBEA9EC181EAC76A2C096`
+- FPK 外层 SHA-256：`2BFB7FEB0005CA628788B4A61474A19C3BA3B3CD47D44F907C855492B93EEF6E`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
@@ -24,7 +24,7 @@
   SHA-256 `A482FB24722B87A0A719ACEE330E329D6DFA21075808C66202E451782812015B`
   （自 `0.1.95` 起逐字节未变）。
 - 管理器：静态 Go x86_64，7,790,752 B（`0.2.4` 重新编译，含向导配置写入逻辑），
-  SHA-256 `7E116443687132A036EE76FB6817D2CF41D6D51CA74C63EB820CABEBD6088B8C`。
+  SHA-256 `D5B5B5BC531E4CC95D27204D9FA28986DA67590FE31BDFE541AD1AD29B030F82`。
 - 回调：静态 Go x86_64，2,793,632 B，
   SHA-256 `A92A9162732788E190EEEED2325991A7E8118146A999205C57E48338B4A4A694`。
   Go 二进制自 `0.2.4` 起带 `-ldflags="-s -w"` 构建，体积较此前版本明显下降，行为不变。
@@ -289,7 +289,10 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 | 原样保存不重启 | 以完全相同取值再次提交：PID 未变化、无重启日志——`--apply-wizard` 退出码 `2` 生效 |
 | 密钥轮换 | 提交新密钥后 `rpc.secret` 与 `aria2.conf` 同时更新，重启后经网关 `aria2.getVersion` 仍返回 Core 1.36.0，AriaNg 显示「已连接」 |
 | 非法输入 | RPC 端口与 BT 端口相同、下载目录越界（`/etc/...`）、密钥过短三种提交均被拒绝（返回 `code 10000`），配置未被改写 |
-| 单元测试 | `go vet` 与 `go test` 在 ubuntu-24.04 runner 通过，覆盖端口范围与互斥、密钥字符集、目录越界、空值保持、安装期创建、配置回读、密钥未变化判定 |
+| 下载目录改为数据卷路径 | 提交 `/vol1/1000/downloads`（不在随包共享目录内）成功：`config.json`、`aria2.conf` 与运行中 `dir` 同步更新，归档目录 `completed` 自动创建且属主为 `aria2`；停止再启动后配置不被启动自愈重置 |
+| 数据卷内新建子目录 | 提交 `/vol1/1000/downloads/movies`：目录被创建并归属 `aria2`，应用可写入 |
+| 系统目录拒绝 | 提交 `/etc/aria2-test` 仍被拒绝（`code 10000`），配置未改写 |
+| 单元测试 | `go vet` 与 `go test` 在 ubuntu-24.04 runner 通过，覆盖端口范围与互斥、密钥字符集、目录越界、数据卷判定、空值保持、安装期创建、配置回读、密钥未变化判定 |
 
 一处框架限制：配置流程失败时，App Center 返回的 `msg` 是 `15002:exit code: 1`，没有带出
 脚本写入 `TRIM_TEMP_LOGFILE` 的中文原因（安装流程会带出）。脚本侧已同时写 stderr 与
@@ -303,7 +306,7 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 
 | 组件 | 大小 | SHA-256 |
 |---|---|---|
-| `aria2-manager` (arm64) | 7,209,120 B | `F850417802F034642C111AB60029E8830744ABC941E3D1D4CDE84996B102987E` |
+| `aria2-manager` (arm64) | 7,209,120 B | `0C65ED2F09FFB57608F5100EB93ABE68C6AED1AD884DAEDF7DDF074B6BCAB2F0` |
 | `aria2-hook` (arm64) | 2,687,136 B | `810533B807E3E376AB09E2960DD9DCA0C53EBECC23C753C93AB391FEDDAC459B` |
 | `aria2c` (arm64) | 10,070,168 B | `57097DA852528679971FA2BD43EBA7DD0742F72EE7538B6FD05053CB6D048627` |
 
@@ -313,8 +316,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,414,446 B，外层 SHA-256
-`FEC84033B93629957315DA06FE2737CCD3FDC642708A486DC9FFE31C8F8D0B03`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,424,627 B，外层 SHA-256
+`C02B8F2CAF43CB3DA5862CC7D9C84D2F74D5E3F328EF1C09D325E7D9E81D9DEA`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，

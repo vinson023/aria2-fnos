@@ -15,9 +15,11 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -201,6 +203,27 @@ func dataShareRoots() []string {
 	return roots
 }
 
+// accessibleRoots 返回飞牛在应用设置里已授权给本应用访问的目录（TRIM_DATA_ACCESSIBLE_PATHS）。
+// 它与 config/resource 声明的数据共享目录是两条不同的授权来源：共享目录由安装包声明，
+// 可访问目录由用户在应用中心逐个授权。两者都应当可以作为下载目录。
+func accessibleRoots() []string {
+	var roots []string
+	for _, root := range strings.Split(os.Getenv("TRIM_DATA_ACCESSIBLE_PATHS"), ":") {
+		resolved, err := resolveDirectory(root)
+		if err != nil {
+			continue
+		}
+		// 与授权根同一口径：只接受飞牛数据卷内的路径，避免把系统目录纳入下载范围。
+		if !volumeRootPattern.MatchString(resolved) {
+			continue
+		}
+		if _, dup := seenIn(roots, resolved); !dup {
+			roots = append(roots, resolved)
+		}
+	}
+	return roots
+}
+
 func normalizeAuthorizedRoots(candidates []string) ([]string, error) {
 	// 用空切片而不是 nil，否则清空授权根会持久化成 JSON null。
 	roots := make([]string, 0, len(candidates))
@@ -230,6 +253,7 @@ func approvedRoots(candidates []string) ([]string, error) {
 		return nil, err
 	}
 	approved = append(approved, authorized...)
+	approved = append(approved, accessibleRoots()...)
 	return approved, nil
 }
 
@@ -244,6 +268,27 @@ func allowedDownloadRoot(candidate string, approvedRoots []string) bool {
 		}
 	}
 	return false
+}
+
+// downloadRootAllowed 判断一个已解析的目录能否承载下载与归档。允许两类：
+//
+//  1. 已授权根内的目录（应用数据共享目录、授权根、飞牛可访问目录）；
+//  2. 飞牛数据卷（/vol<N>）内的任意目录，但调用方必须再用 writableByAppUser 验一次写入。
+//
+// 第 2 条解决的是实际问题：用户在应用设置里把下载目录改成 /vol1/1000/downloads 这类
+// 已有共享目录时，它既不在随包声明的 data-share 下，也不在 config.json 的 authorized_roots
+// 里，旧规则会直接拒绝保存。fnOS 通过 trimacl 给应用用户授予访问权，权限位本身看不出
+// 结果，因此“能不能写”必须以实测为准，而不是靠路径白名单。
+func downloadRootAllowed(resolved string, approvedRoots []string) bool {
+	if resolved == "" {
+		return false
+	}
+	for _, root := range approvedRoots {
+		if containsPath(root, resolved) {
+			return true
+		}
+	}
+	return volumeRootPattern.MatchString(resolved)
 }
 
 // 目录被授权并不等于 aria2 用户拥有实际写权限；在保存配置前用临时文件验证。
@@ -267,6 +312,47 @@ func writableDirectory(candidate string) bool {
 		return false
 	}
 	return os.Remove(name) == nil
+}
+
+// appUserIDs 从飞牛生命周期上下文取专属应用用户；缺失时按用户名查询，最后回退到 aria2。
+func appUserIDs() (int, int, bool) {
+	uid, uidErr := strconv.Atoi(strings.TrimSpace(os.Getenv("TRIM_UID")))
+	gid, gidErr := strconv.Atoi(strings.TrimSpace(os.Getenv("TRIM_GID")))
+	if uidErr == nil && gidErr == nil {
+		return uid, gid, true
+	}
+	name := strings.TrimSpace(os.Getenv("TRIM_USERNAME"))
+	if name == "" {
+		name = "aria2"
+	}
+	account, err := user.Lookup(name)
+	if err != nil {
+		return 0, 0, false
+	}
+	uid, uidErr = strconv.Atoi(account.Uid)
+	gid, gidErr = strconv.Atoi(account.Gid)
+	if uidErr != nil || gidErr != nil {
+		return 0, 0, false
+	}
+	return uid, gid, true
+}
+
+// writableByAppUser 判断专属应用用户能否在目录内创建文件。安装、配置回调与启动探针
+// 都以 root 执行，当前用户恒可写，必须临时降权实测；否则会把 aria2 用户实际写不进去的
+// 目录当成可用，直到真正下载时才失败。
+func writableByAppUser(dir string) bool {
+	if os.Geteuid() != 0 {
+		return writableDirectory(dir)
+	}
+	uid, gid, ok := appUserIDs()
+	if !ok {
+		return writableDirectory(dir)
+	}
+	if err := writableAsUser(dir, uid, gid); err != nil {
+		log.Printf("应用用户对目录 %s 无写权限: %v", dir, err)
+		return false
+	}
+	return true
 }
 
 func effectiveDownloadRoot(value config) (string, error) {
@@ -470,8 +556,8 @@ func disableArchiveOnFailure(value *config, approved []string) bool {
 	case statErr == nil:
 		if !info.IsDir() {
 			reason = "归档路径已存在但不是目录"
-		} else if !allowedDownloadRoot(value.ArchiveRoot, approved) {
-			reason = "归档目录不在已授权的飞牛共享目录内"
+		} else if !downloadRootAllowed(value.ArchiveRoot, approved) {
+			reason = "归档目录不在可用的飞牛数据卷内"
 		}
 	case errors.Is(statErr, os.ErrNotExist):
 		parent := filepath.Dir(value.ArchiveRoot)
@@ -479,8 +565,8 @@ func disableArchiveOnFailure(value *config, approved []string) bool {
 		switch {
 		case parentErr != nil || !parentInfo.IsDir():
 			reason = "归档目录的上级目录不存在"
-		case !allowedDownloadRoot(parent, approved):
-			reason = "归档目录不在已授权的飞牛共享目录内"
+		case !downloadRootAllowed(parent, approved):
+			reason = "归档目录不在可用的飞牛数据卷内"
 		default:
 			if err := os.Mkdir(value.ArchiveRoot, 0o770); err != nil {
 				reason = "自动创建归档目录失败: " + err.Error()
@@ -548,18 +634,26 @@ func validateConfig(value config) error {
 		return err
 	}
 	if value.DownloadRoot != "" {
-		if !allowedDownloadRoot(value.DownloadRoot, approvedRoots) {
+		resolved, err := resolveDirectory(value.DownloadRoot)
+		if err != nil {
+			return errors.New("download root is unavailable")
+		}
+		if !downloadRootAllowed(resolved, approvedRoots) {
 			return errors.New("download root is outside approved shared directories")
 		}
-		if !writableDirectory(value.DownloadRoot) {
+		if !writableByAppUser(resolved) {
 			return errors.New("aria2 用户没有下载目录写入权限，请在飞牛文件管理器中授权该目录")
 		}
 	}
 	if value.ArchiveEnabled {
-		if value.ArchiveRoot == "" || !allowedDownloadRoot(value.ArchiveRoot, approvedRoots) {
+		if value.ArchiveRoot == "" {
 			return errors.New("archive root is outside approved shared directories")
 		}
-		if !writableDirectory(value.ArchiveRoot) {
+		resolved, err := resolveDirectory(value.ArchiveRoot)
+		if err != nil || !downloadRootAllowed(resolved, approvedRoots) {
+			return errors.New("archive root is outside approved shared directories")
+		}
+		if !writableByAppUser(resolved) {
 			return errors.New("aria2 用户没有归档目录写入权限")
 		}
 	}

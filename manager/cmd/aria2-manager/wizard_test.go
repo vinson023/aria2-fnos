@@ -68,6 +68,28 @@ func TestParseWizardPort(t *testing.T) {
 	}
 }
 
+// TestDownloadRootAllowed 固化“哪些目录可以作为下载目录”的判定：已授权根内一律允许；
+// 授权根之外的路径只在飞牛数据卷（/vol<N>）内才继续考察写入权限，系统目录与临时目录
+// 直接拒绝。该函数是纯判定，不访问文件系统，因此各平台都能跑。
+func TestDownloadRootAllowed(t *testing.T) {
+	approved := []string{"/vol1/@appshare/aria2/downloads"}
+	cases := map[string]bool{
+		"/vol1/@appshare/aria2/downloads":        true,
+		"/vol1/@appshare/aria2/downloads/movies": true,
+		"/vol1/1000/downloads":                   true,
+		"/vol2/1000/downloads":                   true,
+		"/etc/aria2":                             false,
+		"/tmp/aria2":                             false,
+		"":                                       false,
+		"/vol1":                                  true,
+	}
+	for path, want := range cases {
+		if got := downloadRootAllowed(path, approved); got != want {
+			t.Fatalf("downloadRootAllowed(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
 func TestApplyWizardCreatesConfigWithSubmittedValues(t *testing.T) {
 	configPath, secretPath, share := wizardEnv(t)
 	t.Setenv(wizardFieldRPCPort, "6900")
