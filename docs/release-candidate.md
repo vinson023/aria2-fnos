@@ -2,9 +2,9 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.4`，10,641,583 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,641,709 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`7297C6222329386F363DBE0E7AFE8C884E8F633F5615E5B6BFA95C50E45D8467`
+- FPK 外层 SHA-256：`606FEACD7E479574CE486E2E2405A983F80D017DB0C30446A27E28A548DB944B`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
@@ -300,6 +300,7 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 | 单次重启 | `startup.log` 只在应用中心的 `/v1/restart` 后出现一次启动记录，回调不再重复重启 |
 | 启动窗口 | 把 `cmd/main` 的固定 `sleep 3` 换成进程与网关 Socket 的就绪轮询：`appcenter-cli start` 从 6.2s 降到 4.2s，重启期间“未运行”的窗口相应缩短 |
 | 保存期间的接口 | 保存→重启的 15 秒内每 0.5s 查询一次应用详情：状态依次为 stopping → stopped → starting → running，全部 `code 0`，`/v1/restart` 返回 `code 0` |
+| 下载目录选择器 | 安装向导不支持目录选择（仅有 7 种字段类型）。应用内 Aria2 右上角文件夹图标 →「选择并授权目录」使用飞牛 SDK 选择器：设备上 `TRIM_DATA_ACCESSIBLE_PATHS=/vol1/1000/downloads`（对应「可访问的文件」），`config.json` 的 `download_root` 同步为同一路径（对应「运行设置」） |
 | RPC 密钥修改 | `password` 类型时保存请求携带的仍是旧值（输入框已是新值），密钥实际改不掉；改为 `text` 后请求携带新值，`rpc.secret` 与 `aria2.conf` 同步更新，`startup.log` 出现「RPC 密钥已更新」 |
 | 下载目录唯一入口 | AriaNg「基本设置」页移除 `dir` 字段（网关本就拒绝运行期修改 `dir`），下载目录只在应用设置里修改 |
 | 单元测试 | `go vet` 与 `go test` 在 ubuntu-24.04 runner 通过，覆盖端口范围与互斥、密钥字符集、目录越界、数据卷判定、空值保持、安装期创建、配置回读、密钥未变化判定 |
@@ -326,8 +327,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,426,199 B，外层 SHA-256
-`1B0E9C3130F2CA0891D7D57D836EC00120564EC1BC87FF9B2332E0083F8C4A69`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,426,452 B，外层 SHA-256
+`12ECF795B9E3193EF2F5009F4439239ECC8D0E4786345E2DD19C4ABF3825B0AB`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，
