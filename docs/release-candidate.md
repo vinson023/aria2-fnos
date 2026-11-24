@@ -2,9 +2,9 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.4`，10,641,510 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,641,284 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`D0270B6EC5751A423D361B3A0922BFC1F772CB82272EA544F3FE3E92CF076292`
+- FPK 外层 SHA-256：`1F26E88DFD63A71A42CEB1E49BDEAEB907E42D8A1473F1990B95C47BE6CAC957`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
@@ -30,6 +30,7 @@
   Go 二进制自 `0.2.4` 起带 `-ldflags="-s -w"` 构建，体积较此前版本明显下降，行为不变。
 - AriaNg：1.3.14 fnOS 适配 bundle（网关路径已改为 `/app/aria2/jsonrpc`）；构建时使用 Node，运行时仅静态文件。
   `0.2.2` 起 `basicOptions` 数组不再包含 `special-mode` 和 `fnos-archive-dir`；
+  `0.2.4` 起移除了 `dir`（网关本就拒绝运行期修改下载目录），下载目录只在应用设置里维护；
   `0.2.3` 起 RPC 别名默认值由 `Aria2 Pro` 改为 `Aria2`。
 - SDK：固定 `@trimjs/web-app@0.4.2`，仅纳入静态 `dist/index.js`；FPK Scope 为 `trim.file.userAccess`、`trim.file.sharedAccess`，manifest `micro_app=true`。
 
@@ -295,6 +296,9 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 | 删除任务 | 经网关添加真实下载 → 完成后按 AriaNg 顺序调 `/app/aria2/api/v1/cleanup`（204）+ `aria2.removeDownloadResult`：文件已删除，`tellStopped` 中不再出现该 gid |
 | 清空已结束任务 | 同样流程改用 `aria2.purgeDownloadResult`：文件删除、已停止列表归零 |
 | 越界路径不阻塞删除 | 同一请求里混入下载目录之外的文件路径：该路径被跳过并记日志，接口仍返回 204，任务删除不被中断 |
+| 界面保存不再报异常 | 在应用中心「应用设置 → 运行设置 → 编辑」把 RPC 端口改为 6806 后点「保存并重启」：先提示「保存成功」，无「服务异常」；`config.json` 与 `aria2.conf` 同步为 6806，RPC 监听 6806 |
+| 单次重启 | `startup.log` 只在应用中心的 `/v1/restart` 后出现一次启动记录，回调不再重复重启 |
+| 下载目录唯一入口 | AriaNg「基本设置」页移除 `dir` 字段（网关本就拒绝运行期修改 `dir`），下载目录只在应用设置里修改 |
 | 单元测试 | `go vet` 与 `go test` 在 ubuntu-24.04 runner 通过，覆盖端口范围与互斥、密钥字符集、目录越界、数据卷判定、空值保持、安装期创建、配置回读、密钥未变化判定 |
 
 一处框架限制：配置流程失败时，App Center 返回的 `msg` 是 `15002:exit code: 1`，没有带出
@@ -319,8 +323,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,425,980 B，外层 SHA-256
-`021A30F140A6F6448EC66F0409B88669E08E5B0E139EAF77E8E725BE496466CD`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,425,869 B，外层 SHA-256
+`34B27584C2E7BB337C137826D1EF42F54BAF37EE0499168AF5B090420F2D9341`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，

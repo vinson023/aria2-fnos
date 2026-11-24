@@ -20,7 +20,7 @@ if [ -x "$app_root/target/server/aria2-manager" ]; then
 fi
 
 # 与安装流程同一个落盘入口：只覆盖用户提交的字段，未填写的端口、密钥、下载目录保持原值。
-# 退出码 2 表示配置与密钥都没有变化（例如用户原样保存），此时不应重启打断下载。
+# 退出码 2 表示配置与密钥都没有变化（例如用户原样保存）。
 if apply_output=$("$app_root/server/aria2-manager" --apply-wizard \
         --config "$TRIM_PKGETC/config.json" --secret "$TRIM_PKGETC/rpc.secret" 2>&1); then
     apply_code=0
@@ -41,22 +41,10 @@ done 2>/dev/null || true
 chown aria2:aria2 "$TRIM_PKGETC/config.json" "$TRIM_PKGETC/rpc.secret" 2>/dev/null || true
 chmod 600 "$TRIM_PKGETC/config.json" "$TRIM_PKGETC/rpc.secret" 2>/dev/null || true
 
-# 端口、密钥与下载目录都写进 aria2.conf，只有重启后才会生效。应用未运行时不必重启，
-# 配置会在下次启动时直接被读取。
-pid_file="$TRIM_PKGVAR/manager.pid"
-if [ -r "$pid_file" ]; then
-    pid=$(cat "$pid_file" 2>/dev/null || true)
-    case "$pid" in
-        *[!0-9]*|'') pid="" ;;
-    esac
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-        lifecycle_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-        if ! restart_output=$("$lifecycle_dir/main" restart 2>&1); then
-            printf '%s\n' "$restart_output" >> "$TRIM_PKGVAR/startup.log" 2>/dev/null || true
-            fail "设置已保存，但自动重启失败，请在应用中心手动重启应用。"
-        fi
-        printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') 应用设置已更新并重启生效" >> "$TRIM_PKGVAR/startup.log" 2>/dev/null || true
-    fi
-fi
+# 这里刻意不自行重启。应用中心的保存按钮是「保存并重启」，它在配置流程返回后会调用
+# POST /v1/restart 完成重启；回调里再重启一次会与它撞车，表现为“保存成功”之后紧接着
+# 弹出“服务异常”。配置已落盘，端口、密钥与下载目录在应用中心触发的重启中由
+# cmd/main 重新生成 aria2.conf 后生效。
+printf '%s\n' "$(date '+%Y-%m-%d %H:%M:%S') 应用设置已保存，等待应用中心重启生效" >> "$TRIM_PKGVAR/startup.log" 2>/dev/null || true
 
 exit 0
