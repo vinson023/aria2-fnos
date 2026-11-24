@@ -20,10 +20,18 @@ if [ -x "$app_root/target/server/aria2-manager" ]; then
 fi
 
 # 与安装流程同一个落盘入口：只覆盖用户提交的字段，未填写的端口、密钥、下载目录保持原值。
-if ! apply_output=$("$app_root/server/aria2-manager" --apply-wizard \
+# 退出码 2 表示配置与密钥都没有变化（例如用户原样保存），此时不应重启打断下载。
+if apply_output=$("$app_root/server/aria2-manager" --apply-wizard \
         --config "$TRIM_PKGETC/config.json" --secret "$TRIM_PKGETC/rpc.secret" 2>&1); then
-    fail "${apply_output:-保存应用配置失败。}"
+    apply_code=0
+else
+    apply_code=$?
 fi
+case "$apply_code" in
+    0) ;;
+    2) exit 0 ;;
+    *) fail "${apply_output:-保存应用配置失败。}" ;;
+esac
 printf '%s\n' "$apply_output" | while IFS= read -r line; do
     [ -n "$line" ] || continue
     printf '%s\n' "$line" >> "$TRIM_PKGVAR/startup.log"

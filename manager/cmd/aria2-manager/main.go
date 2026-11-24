@@ -1469,13 +1469,17 @@ func main() {
 	if applyWizard {
 		// 安装与应用设置共用这一个入口：校验、目录创建、配置与密钥落盘都在这里完成，
 		// 生命周期脚本只负责把用户可见的错误写进 TRIM_TEMP_LOGFILE 并按需重启。
-		notes, wizardErr := applyWizardInput(configPath, secretPath, wizardInitial)
+		notes, changed, wizardErr := applyWizardInput(configPath, secretPath, wizardInitial)
 		if wizardErr != nil {
 			fmt.Fprintln(os.Stderr, wizardErr)
 			os.Exit(1)
 		}
 		for _, note := range notes {
 			fmt.Println(note)
+		}
+		if !changed {
+			// 退出码 2 = 校验通过且取值与磁盘一致，调用方不必重启服务。
+			os.Exit(2)
 		}
 		return
 	}

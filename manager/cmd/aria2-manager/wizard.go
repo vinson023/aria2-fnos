@@ -62,32 +62,35 @@ func generateRPCSecret() (string, error) {
 // 它刻意复用常规配置路径的全部校验：端口范围与互斥、下载目录是否位于飞牛共享目录、
 // 归档目录派生与权限探测。差异只有两点：安装阶段（initial）允许在配置文件不存在时
 // 按默认值创建；下载目录允许尚不存在，但必须能在已授权目录内安全创建。
-func applyWizardInput(configPath, secretPath string, initial bool) ([]string, error) {
+//
+// 返回的 changed 表示配置或密钥是否真的发生了变化。调用方据此决定要不要重启服务：
+// 用户在设置页原样保存一次不应该打断正在进行的下载。
+func applyWizardInput(configPath, secretPath string, initial bool) ([]string, bool, error) {
 	var notes []string
 
 	value, existed, err := loadWizardBase(configPath, initial)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if raw, ok := wizardValue(wizardFieldRPCPort); ok {
 		port, err := parseWizardPort(raw, "RPC 监听端口")
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		value.RPCPort = port
 	}
 	if raw, ok := wizardValue(wizardFieldListenPort); ok {
 		port, err := parseWizardPort(raw, "BT 监听端口")
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		value.ListenPort = port
 	}
 	if raw, ok := wizardValue(wizardFieldDHTListenPort); ok {
 		port, err := parseWizardPort(raw, "DHT 监听端口")
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		value.DHTListenPort = port
 	} else if value.DHTListenPort == 0 {
@@ -95,7 +98,7 @@ func applyWizardInput(configPath, secretPath string, initial bool) ([]string, er
 		value.DHTListenPort = value.ListenPort
 	}
 	if value.RPCPort == value.ListenPort {
-		return nil, errors.New("RPC 监听端口不能与 BT 监听端口相同")
+		return nil, false, errors.New("RPC 监听端口不能与 BT 监听端口相同")
 	}
 	if raw, ok := wizardValue(wizardFieldSpecialMode); ok {
 		switch raw {
@@ -104,41 +107,46 @@ func applyWizardInput(configPath, secretPath string, initial bool) ([]string, er
 		case "keep":
 			// 应用设置表单的默认选项：留空或显式“保持当前设置”都不改动归档开关。
 		default:
-			return nil, errors.New("下载完成后归档只能选择开启、关闭或保持当前设置")
+			return nil, false, errors.New("下载完成后归档只能选择开启、关闭或保持当前设置")
 		}
 	}
 	if raw, ok := wizardValue(wizardFieldDownloadRoot); ok {
 		if !filepath.IsAbs(raw) {
-			return nil, errors.New("下载文件夹必须是绝对路径，例如 /vol1/1000/downloads")
+			return nil, false, errors.New("下载文件夹必须是绝对路径，例如 /vol1/1000/downloads")
 		}
 		value.DownloadRoot = filepath.Clean(raw)
 	}
 
 	approved, err := approvedRoots(value.AuthorizedRoots)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// 下载目录必须先落地再走 prepareConfig：归档目录恒定派生为「下载目录/completed」，
 	// 上级目录不存在会让归档被判定为不可用而静默关闭。
 	if err := ensureWizardDownloadRoot(value.DownloadRoot, approved); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := prepareConfig(&value); err != nil {
-		return nil, describeWizardError(value, err)
+		return nil, false, describeWizardError(value, err)
 	}
 	// prepareConfig 会按实际情况修正归档开关，这里以修正后的结果为准。
 	if value.DownloadRoot != "" && !allowedDownloadRoot(value.DownloadRoot, approved) {
-		return nil, errors.New("下载文件夹必须位于飞牛共享目录或已授权的目录内")
+		return nil, false, errors.New("下载文件夹必须位于飞牛共享目录或已授权的目录内")
+	}
+	if value.AuthorizedRoots == nil {
+		// 用空数组而不是 null 落盘，保持与安装脚本写出的形态一致。
+		value.AuthorizedRoots = []string{}
 	}
 
 	// 密钥先校验再落盘配置文件：密钥不合法时不应留下“配置已改、重启后仍连不上”的中间态。
 	submittedSecret, secretProvided := wizardValue(wizardFieldRPCSecret)
 	if secretProvided && !validRPCSecret(submittedSecret) {
-		return nil, fmt.Errorf("RPC 密钥需为 16-%d 位字母、数字、点、下划线或连字符", maxRPCSecretLength)
+		return nil, false, fmt.Errorf("RPC 密钥需为 16-%d 位字母、数字、点、下划线或连字符", maxRPCSecretLength)
 	}
 
-	if err := writeWizardConfig(configPath, value); err != nil {
-		return nil, err
+	configChanged, err := writeWizardConfig(configPath, value)
+	if err != nil {
+		return nil, false, err
 	}
 	if !existed {
 		notes = append(notes, "已按向导取值创建配置文件")
@@ -146,7 +154,7 @@ func applyWizardInput(configPath, secretPath string, initial bool) ([]string, er
 
 	secretChanged, secretNote, err := applyWizardSecret(secretPath, submittedSecret)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if secretNote != "" {
 		notes = append(notes, secretNote)
@@ -159,7 +167,7 @@ func applyWizardInput(configPath, secretPath string, initial bool) ([]string, er
 	if secretChanged {
 		notes = append(notes, "RPC 密钥已更新，客户端需要使用新密钥重新连接")
 	}
-	return notes, nil
+	return notes, configChanged || secretChanged, nil
 }
 
 // loadWizardBase 读取现有配置作为基础。配置损坏时走启动自愈同一套修复逻辑，
@@ -340,23 +348,30 @@ func writeSecretFile(path, secret string) error {
 	return nil
 }
 
-func writeWizardConfig(path string, value config) error {
+// writeWizardConfig 原子写出配置，返回内容是否真的发生变化。取值完全一致时不重写文件，
+// 调用方据此跳过重启，避免用户原样保存一次就打断正在进行的下载。
+func writeWizardConfig(path string, value config) (bool, error) {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
-		return err
+		return false, err
 	}
 	data = append(data, '\n')
+	if previous, err := os.ReadFile(path); err == nil {
+		if strings.TrimRight(string(previous), "\r\n") == strings.TrimRight(string(data), "\n") {
+			return false, nil
+		}
+	}
 	temporary := path + ".tmp"
 	if err := os.WriteFile(temporary, data, 0o600); err != nil {
-		return err
+		return false, err
 	}
 	if err := os.Chmod(temporary, 0o600); err != nil {
 		_ = os.Remove(temporary)
-		return err
+		return false, err
 	}
 	if err := os.Rename(temporary, path); err != nil {
 		_ = os.Remove(temporary)
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }

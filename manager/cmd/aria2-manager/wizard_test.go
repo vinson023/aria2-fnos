@@ -77,9 +77,12 @@ func TestApplyWizardCreatesConfigWithSubmittedValues(t *testing.T) {
 	t.Setenv(wizardFieldDownloadRoot, filepath.Join(share, "downloads"))
 	t.Setenv(wizardFieldRPCSecret, "abcdefghijklmnop1234")
 
-	notes, err := applyWizardInput(configPath, secretPath, true)
+	notes, changed, err := applyWizardInput(configPath, secretPath, true)
 	if err != nil {
 		t.Fatalf("apply wizard: %v", err)
+	}
+	if !changed {
+		t.Fatal("首次写入必须报告配置已变更")
 	}
 	if len(notes) == 0 {
 		t.Fatal("expected human readable notes")
@@ -116,7 +119,7 @@ func TestApplyWizardGeneratesSecretWhenMissing(t *testing.T) {
 	t.Setenv(wizardFieldRPCPort, "6800")
 	t.Setenv(wizardFieldListenPort, "6888")
 
-	if _, err := applyWizardInput(configPath, secretPath, true); err != nil {
+	if _, _, err := applyWizardInput(configPath, secretPath, true); err != nil {
 		t.Fatalf("apply wizard: %v", err)
 	}
 	secret, err := os.ReadFile(secretPath)
@@ -150,7 +153,7 @@ func TestApplyWizardRejectsInvalidInput(t *testing.T) {
 			for key, value := range tc.env {
 				t.Setenv(key, value)
 			}
-			_, err := applyWizardInput(configPath, secretPath, true)
+			_, _, err := applyWizardInput(configPath, secretPath, true)
 			if err == nil {
 				t.Fatal("expected an error")
 			}
@@ -166,7 +169,7 @@ func TestApplyWizardKeepsExistingValuesWhenFieldsEmpty(t *testing.T) {
 	t.Setenv(wizardFieldRPCPort, "6900")
 	t.Setenv(wizardFieldListenPort, "6999")
 	t.Setenv(wizardFieldRPCSecret, "abcdefghijklmnop1234")
-	if _, err := applyWizardInput(configPath, secretPath, true); err != nil {
+	if _, _, err := applyWizardInput(configPath, secretPath, true); err != nil {
 		t.Fatalf("initial apply: %v", err)
 	}
 
@@ -175,7 +178,7 @@ func TestApplyWizardKeepsExistingValuesWhenFieldsEmpty(t *testing.T) {
 	t.Setenv(wizardFieldListenPort, "")
 	t.Setenv(wizardFieldRPCSecret, "")
 	t.Setenv(wizardFieldSpecialMode, "off")
-	if _, err := applyWizardInput(configPath, secretPath, false); err != nil {
+	if _, _, err := applyWizardInput(configPath, secretPath, false); err != nil {
 		t.Fatalf("second apply: %v", err)
 	}
 
@@ -201,11 +204,29 @@ func TestApplyWizardKeepsExistingValuesWhenFieldsEmpty(t *testing.T) {
 	}
 }
 
+// TestApplyWizardReportsNoChangeForIdenticalInput 保证“原样保存”不会触发重启：
+// 配置与密钥都没变化时必须返回 changed=false。
+func TestApplyWizardReportsNoChangeForIdenticalInput(t *testing.T) {
+	configPath, secretPath, _ := wizardEnv(t)
+	t.Setenv(wizardFieldRPCPort, "6900")
+	t.Setenv(wizardFieldListenPort, "6999")
+	t.Setenv(wizardFieldSpecialMode, "off")
+	if _, changed, err := applyWizardInput(configPath, secretPath, true); err != nil || !changed {
+		t.Fatalf("首次写入应有变更: changed=%v err=%v", changed, err)
+	}
+	// 第二次提交完全相同的取值。
+	if _, changed, err := applyWizardInput(configPath, secretPath, false); err != nil {
+		t.Fatalf("二次写入: %v", err)
+	} else if changed {
+		t.Fatal("取值未变化时不应报告变更")
+	}
+}
+
 func TestApplyWizardRejectsDownloadRootOutsideShares(t *testing.T) {
 	configPath, secretPath, _ := wizardEnv(t)
 	outside := t.TempDir()
 	t.Setenv(wizardFieldDownloadRoot, filepath.Join(outside, "downloads"))
-	if _, err := applyWizardInput(configPath, secretPath, true); err == nil {
+	if _, _, err := applyWizardInput(configPath, secretPath, true); err == nil {
 		t.Fatal("expected outside directory to be rejected")
 	}
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
@@ -215,7 +236,7 @@ func TestApplyWizardRejectsDownloadRootOutsideShares(t *testing.T) {
 
 func TestApplyWizardWithoutConfigRequiresInitial(t *testing.T) {
 	configPath, secretPath, _ := wizardEnv(t)
-	if _, err := applyWizardInput(configPath, secretPath, false); err == nil {
+	if _, _, err := applyWizardInput(configPath, secretPath, false); err == nil {
 		t.Fatal("expected missing config to be rejected outside install flow")
 	}
 }
@@ -225,7 +246,7 @@ func TestApplyWizardWithoutConfigRequiresInitial(t *testing.T) {
 func TestWizardConfigRoundTrip(t *testing.T) {
 	configPath, secretPath, _ := wizardEnv(t)
 	t.Setenv(wizardFieldSpecialMode, "move")
-	if _, err := applyWizardInput(configPath, secretPath, true); err != nil {
+	if _, _, err := applyWizardInput(configPath, secretPath, true); err != nil {
 		t.Fatalf("apply wizard: %v", err)
 	}
 	data, err := os.ReadFile(configPath)

@@ -2,9 +2,9 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.4`，10,629,756 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,630,083 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`06988A3E8880F2DBD6B6154855277E1620EAED9F242672F8B3C8DDC74B82C93F`
+- FPK 外层 SHA-256：`D6BF970977F22F9F6A8DA4C5A6C52E22CA73213A7D812AEB5EA34C9E55D5702F`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
@@ -24,7 +24,7 @@
   SHA-256 `A482FB24722B87A0A719ACEE330E329D6DFA21075808C66202E451782812015B`
   （自 `0.1.95` 起逐字节未变）。
 - 管理器：静态 Go x86_64，7,790,752 B（`0.2.4` 重新编译，含向导配置写入逻辑），
-  SHA-256 `7FFC04FEF83DE0C8FF1BDF987C43369FEFDEE71487A50BBC4E0F8F184ED8C0E9`。
+  SHA-256 `8ED62C792272EF4055F3F9BA22551D94705D7A4CAF1D11D060BDC877B2ED573A`。
 - 回调：静态 Go x86_64，2,793,632 B，
   SHA-256 `A92A9162732788E190EEEED2325991A7E8118146A999205C57E48338B4A4A694`。
   Go 二进制自 `0.2.4` 起带 `-ldflags="-s -w"` 构建，体积较此前版本明显下降，行为不变。
@@ -293,7 +293,7 @@ ubuntu runner 上执行）；`go vet` 通过；x86_64 与 ARM64 包均完成解�
 
 | 组件 | 大小 | SHA-256 |
 |---|---|---|
-| `aria2-manager` (arm64) | 7,209,120 B | `30BA19D16A516EC4EE819FE8DC1C337741D36F0CF2BEC5BFA7A4969D377E6A87` |
+| `aria2-manager` (arm64) | 7,209,120 B | `34B137715C613FB22B9E024F475561C0B334681D93BC62EDCFB2886DBAC76C96` |
 | `aria2-hook` (arm64) | 2,687,136 B | `810533B807E3E376AB09E2960DD9DCA0C53EBECC23C753C93AB391FEDDAC459B` |
 | `aria2c` (arm64) | 10,070,168 B | `57097DA852528679971FA2BD43EBA7DD0742F72EE7538B6FD05053CB6D048627` |
 
@@ -303,8 +303,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,414,147 B，外层 SHA-256
-`867241A637F9445B6A3D5754B4D9131C0F145CBE3C2F42696A46B7D3F41A446C`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,414,235 B，外层 SHA-256
+`9B24D8C76828DC70100F9D4D2FE88A5D30B6FE04EB606C6B84B9CB28494F3820`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，

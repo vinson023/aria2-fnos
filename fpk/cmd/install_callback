@@ -86,10 +86,17 @@ fi
 
 # 配置、端口、归档目录、下载目录与 RPC 密钥统一由管理器落盘：校验规则、目录创建和
 # 属主继承都在同一处实现，避免 shell 里再拼一份 JSON 与权限逻辑。
-if ! apply_output=$("$app_root/server/aria2-manager" --apply-wizard --wizard-initial \
+# 退出码 2 表示取值与磁盘一致（覆盖安装且未改参数），同样算成功。
+if apply_output=$("$app_root/server/aria2-manager" --apply-wizard --wizard-initial \
         --config "$TRIM_PKGETC/config.json" --secret "$TRIM_PKGETC/rpc.secret" 2>&1); then
-    fail "${apply_output:-写入应用配置失败。}"
+    apply_code=0
+else
+    apply_code=$?
 fi
+case "$apply_code" in
+    0|2) ;;
+    *) fail "${apply_output:-写入应用配置失败。}" ;;
+esac
 printf '%s\n' "$apply_output" | while IFS= read -r line; do
     [ -n "$line" ] || continue
     printf '%s\n' "$line" >> "$TRIM_PKGVAR/startup.log"
