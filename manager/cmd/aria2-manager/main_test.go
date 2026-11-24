@@ -328,6 +328,44 @@ func TestEffectiveDownloadRootUsesConfiguredRoot(t *testing.T) {
 	}
 }
 
+// TestTaskScopeIncludesDownloadAndArchiveRoots 守住删除任务与清空已结束任务的文件清理范围：
+// 下载目录可能位于共享目录之外（0.2.4 起允许落在任意飞牛数据卷），若 taskScope 不把它
+// 算进来，AriaNg 的清理请求会被判越界，整个删除操作随之中断。
+func TestTaskScopeIncludesDownloadAndArchiveRoots(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fnOS cleanup paths use POSIX separators")
+	}
+	share := t.TempDir()
+	t.Setenv("TRIM_DATA_SHARE_PATHS", share)
+	download := filepath.Join(share, "downloads")
+	archive := filepath.Join(download, "completed")
+	if err := os.MkdirAll(archive, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	store := &configStore{cfg: config{DownloadRoot: download, ArchiveRoot: archive}}
+	_, roots := store.taskScope()
+	for _, want := range []string{download, archive} {
+		found := false
+		for _, got := range roots {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("taskScope 未包含 %s: %#v", want, roots)
+		}
+	}
+	// 下载目录内的文件必须能通过越界检查，否则 removeTaskPath 会拒绝删除。
+	file := filepath.Join(download, "task.bin")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := taskContainedRoot(file, roots); err != nil {
+		t.Fatalf("下载目录内的文件应可清理: %v", err)
+	}
+}
+
 func TestValidateConfigRejectsUnsafeDirectoryCharacters(t *testing.T) {
 	if err := validateConfig(config{RPCPort: 6800, ListenPort: 6888, DownloadRoot: "/vol1/downloads\nlisten-port=22"}); err == nil {
 		t.Fatal("expected unsafe directory to be rejected")

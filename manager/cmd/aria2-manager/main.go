@@ -668,7 +668,7 @@ func portAvailable(network, address string) bool {
 	return listener.Close() == nil
 }
 
-// taskScope 给出任务清理与种子台账共用的配置快照和授权根集合。
+// taskScope 给出任务清理与种子台账共用的配置快照和允许删除的根集合。
 // 调用方拿到的是副本，读不到后续保存，也不会与写路径共享同一份切片。
 func (store *configStore) taskScope() (config, []string) {
 	store.mu.Lock()
@@ -678,6 +678,18 @@ func (store *configStore) taskScope() (config, []string) {
 	// 除授权目录外还要覆盖本机可用根（数据共享目录与应用私有兜底目录），否则自愈把
 	// 下载目录落到私有目录之后，删除任务会因为"越界"而拒绝清理已下载文件。
 	roots = append(roots, sharedRoots()...)
+	// 下载目录与归档目录本身就是用户显式选定的范围。0.2.4 起下载目录可以放在任意飞牛
+	// 数据卷内，它可能既不在共享目录里也不在 authorized_roots 里；少了这两项，
+	// AriaNg 的"删除任务""清空已结束任务"会在清理文件这一步被判越界而整体失败。
+	for _, candidate := range []string{cfg.DownloadRoot, cfg.ArchiveRoot} {
+		resolved, err := resolveDirectory(candidate)
+		if err != nil {
+			continue
+		}
+		if _, dup := seenIn(roots, resolved); !dup {
+			roots = append(roots, resolved)
+		}
+	}
 	return cfg, roots
 }
 
@@ -1776,11 +1788,18 @@ func main() {
 			return
 		}
 		_, roots := store.taskScope()
+		skipped := 0
 		for _, path := range request.Paths {
 			if err := removeTaskPath(path, roots); err != nil {
-				http.Error(w, "cleanup rejected", http.StatusConflict)
-				return
+				// 单个路径失败不能中断整次删除：AriaNg 的「删除任务」「清空已结束任务」
+				// 都是先调本接口清理文件、成功后才移除任务记录。这里一旦返回错误，任务
+				// 就删不掉，界面表现为这两个功能完全失效。越界或不可删的路径只跳过并留痕。
+				log.Printf("清理任务文件已跳过: %s (%v)", path, err)
+				skipped++
 			}
+		}
+		if skipped > 0 {
+			log.Printf("清理请求共 %d 个路径，跳过 %d 个", len(request.Paths), skipped)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}), cfg.GatewayUser))
