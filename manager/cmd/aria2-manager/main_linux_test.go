@@ -78,6 +78,30 @@ func TestEnsureConfiguredDirectoriesNoopWhenDisabled(t *testing.T) {
 	}
 }
 
+// volumeFixture 在 /vol<N> 下准备一个可写测试目录。这组用例必须使用真实的数据卷
+// 路径（volumeRootPattern 只接受 /vol<N>/），因此在没有 /vol1 写权限的环境（例如
+// 普通用户的 CI runner）里直接跳过，而不是让整个测试套件失败。
+func volumeFixture(t *testing.T) string {
+	t.Helper()
+	parent := "/vol1/@appdata/aria2"
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		t.Skipf("需要可写的 /vol1 数据卷路径，当前环境不具备: %v", err)
+	}
+	dir, err := os.MkdirTemp(parent, "test-fixture-")
+	if err != nil {
+		t.Skipf("无法在 %s 下创建 fixture: %v", parent, err)
+	}
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(resolved, 0o700)
+		_ = os.RemoveAll(dir)
+	})
+	return resolved
+}
+
 // 复现用户截图里 "/vol2/1000/downloads 不是 aria2 用户可写" 的故障模式：
 // 归档目录的父目录 aria2 不可写 → 创建失败。这种情况必须降级为关闭归档，
 // 而不是把整个下载目录保存给堵死。
@@ -87,22 +111,11 @@ func TestEnsureConfiguredDirectoriesDegradesWhenParentUnwritable(t *testing.T) {
 	}
 	// 落在 /vol<N>/ 下才能通过 volumeRootPattern 授权根校验，同时 aria2 用户
 	// 必须能在该路径下创建子目录（否则测试本身就因 fixture 创建失败而崩）。
-	fixture := "/vol1/@appdata/aria2/test-fixture"
-	if err := os.MkdirAll(fixture, 0755); err != nil {
-		t.Fatal(err)
-	}
-	share, err := filepath.EvalSymlinks(fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
+	share := volumeFixture(t)
 	t.Setenv("TRIM_DATA_SHARE_PATHS", share)
 	if err := os.Chmod(share, 0500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = os.Chmod(share, 0700)
-		_ = os.RemoveAll(fixture)
-	})
 
 	value := config{
 		DownloadRoot:   share,
@@ -132,18 +145,7 @@ func TestConfigUpdateKeepsDownloadRootWhenArchiveUnwritable(t *testing.T) {
 		t.Skip("root 可绕过文件权限位")
 	}
 	// 落在 /vol<N>/ 下才能通过 volumeRootPattern 授权根校验。
-	fixture := "/vol1/@appdata/aria2/test-fixture"
-	if err := os.MkdirAll(fixture, 0755); err != nil {
-		t.Fatal(err)
-	}
-	share, err := filepath.EvalSymlinks(fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(share, 0700)
-		_ = os.RemoveAll(fixture)
-	})
+	share := volumeFixture(t)
 	if err := os.Chmod(share, 0500); err != nil {
 		t.Fatal(err)
 	}
