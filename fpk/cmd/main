@@ -293,6 +293,27 @@ start)
     chown "$service_user:$service_user" "$TRIM_PKGETC/config.json" 2>/dev/null || true
     chmod 600 "$TRIM_PKGETC/config.json" 2>/dev/null || true
     write_aria2_config
+    # aria2c 是 C 程序，启动时不会像 Go 进程那样把软限制自动提到硬限制，默认软限制
+    # 通常只有 1024。十几个 BT 任务、数百条对端连接就足以把它打满，后果有两种表现：
+    #   1. 打开下载文件失败：No file descriptors available（errorCode=15），任务直接进 error；
+    #   2. tracker 域名解析失败：Failed to resolve the hostname ... System error
+    #      —— 解析也需要新建 socket，同样卡在 fd 上。
+    # 这里按硬限制抬到 65536，避免用户看到「一部分任务下载失败」而配置本身没有问题。
+    fd_target=65536
+    fd_hard=$( (ulimit -Hn 2>/dev/null) || echo "" )
+    case "$fd_hard" in
+        ''|unlimited) ;;
+        *)
+            if [ "$fd_hard" -lt "$fd_target" ] 2>/dev/null; then
+                fd_target=$fd_hard
+            fi
+            ;;
+    esac
+    if ulimit -n "$fd_target" 2>/dev/null; then
+        log_startup "aria2c 文件描述符软限制已设为 $fd_target"
+    else
+        log_startup "无法提升文件描述符软限制，保持当前取值（任务多时可能打开文件失败）"
+    fi
     start-stop-daemon --start --background --make-pidfile --pidfile "$aria2_pid" --chuid "$service_user" --output "$TRIM_PKGVAR/aria2.log" --exec "$server/aria2c" -- --conf-path="$TRIM_PKGVAR/aria2.conf"
     config_json=$(cat "$config_file")
     rpc_secret=$(cat "$runtime_secret")

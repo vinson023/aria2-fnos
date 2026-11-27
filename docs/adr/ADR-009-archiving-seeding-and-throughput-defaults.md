@@ -89,3 +89,25 @@
 - 前端链路实测：在真实浏览器中通过飞牛网关相对路径 `jsonrpc` 调用
   `aria2.tellActive`、`aria2.tellWaiting`、`aria2.tellStopped(0..1000)` 与
   `aria2.getVersion`，单次往返 4-5 ms 且全部返回可解析 JSON，不存在截断或重试风暴。
+
+## 修订（2026-11-27）：软 ulimit 必须显式提高
+
+上面第 3 条把 `ulimit -n 1024` 列为「沿用的上游保守值」，但当时只调整了 aria2
+参数，**没有动 fd 软限制**。实测验证这个默认值在多任务下会直接造成故障：
+
+- 现场：14 个 BT 任务、约 480 条已建立连接时，`/proc/<aria2c pid>/limits` 显示
+  `Max open files 1024`，实际已用 **1011**；
+- 后果一：4 个任务以 `errorCode=15` 结束，错误为
+  `Failed to open the file ...: No file descriptors available`；
+- 后果二：同一时段 tracker 集体报
+  `Failed to resolve the hostname ... cause: System error`——域名解析同样需要新建
+  socket，取不到 fd 就退化成通用的 System error，很容易被误判成 DNS 故障。
+
+原因：aria2c 是 C 程序，启动时不会像 Go 进程那样把软限制自动提到硬限制；管理器
+（Go）的软限制是 524287，而 aria2c 只有 1024，两者不在同一量级。
+
+修正：`cmd/main` 拉起 aria2c 前执行 `ulimit -n 65536`（不超过硬限制），并把结果写进
+`startup.log`。修复后同一批 14 个任务全部恢复下载，fd 用量稳定在 870 左右。
+
+后续若再遇到「部分任务莫名失败」，先看 `/proc/<pid>/limits` 与
+`ls /proc/<pid>/fd | wc -l`，不要先怀疑网络或磁盘。
