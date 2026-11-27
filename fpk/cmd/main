@@ -39,9 +39,15 @@ log_startup() {
     fi
 }
 
-# 运行期权限看护：每 60 秒实测下载/归档目录对应用用户是否可写，不可写时重新授权。
-# 飞牛会在开机等时机重新应用共享目录权限，把本应用补的组授权覆盖掉；只靠启动时自愈
-# 会留下整段不可写的时间窗。看护进程随管理器退出而结束，不额外占用常驻资源。
+# 运行期权限看护：实测下载/归档目录对应用用户是否可写，不可写时重新授权。
+#
+# 飞牛在开机（以及部分共享目录操作后）会重新应用共享目录权限，把本应用补的组授权
+# 覆盖掉。启动流程里已经先修权限再拉起 aria2c，所以「应用启动」这一步不产生窗口；
+# 需要兜的是权限在应用已运行之后才被改回的情况（开机时权限服务晚于应用执行、或用户
+# 在文件管理器里改了目录权限）。一旦发生，aria2 会持续不可写，直到补回来为止。
+#
+# 检查本身约 10 毫秒：启动后 10 分钟按 10 秒一次（覆盖开机后的竞争窗口），之后降到
+# 60 秒一次。看护随管理器退出而结束，不新增常驻服务。
 watch_download_permissions() {
     watcher_manager="$1"
     watcher_config="$2"
@@ -51,8 +57,15 @@ watch_download_permissions() {
     # 否则每次重启都多留一个循环进程。
     watcher_owner=$(cat "$watcher_pidfile" 2>/dev/null) || return 0
     [ -n "$watcher_owner" ] || return 0
+    watcher_elapsed=0
     while kill -0 "$watcher_owner" 2>/dev/null; do
-        sleep 60
+        if [ "$watcher_elapsed" -lt 600 ]; then
+            watcher_interval=10
+        else
+            watcher_interval=60
+        fi
+        sleep "$watcher_interval"
+        watcher_elapsed=$((watcher_elapsed + watcher_interval))
         watcher_pid=$(cat "$watcher_pidfile" 2>/dev/null) || break
         [ "$watcher_pid" = "$watcher_owner" ] || break
         kill -0 "$watcher_pid" 2>/dev/null || break
