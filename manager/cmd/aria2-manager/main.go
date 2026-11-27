@@ -1564,7 +1564,7 @@ func main() {
 	var configStdin bool
 	var configEnv string
 	var secretEnv string
-	var printDownloadRoot, ensurePorts, migrateConfig, applyWizard, wizardInitial bool
+	var printDownloadRoot, ensurePorts, migrateConfig, applyWizard, wizardInitial, repairPermissions bool
 	// 运行期覆盖文件与种子元数据台账写在持久化目录，卸载选择清空配置时由 uninstall_callback 一并删除。
 	defaultRuntimeOptions := ""
 	defaultTorrentLedger := ""
@@ -1585,6 +1585,10 @@ func main() {
 	flag.StringVar(&configEnv, "config-env", "", "从环境变量读取配置 JSON")
 	flag.StringVar(&secretEnv, "secret-env", "", "从环境变量读取 RPC 密钥")
 	flag.BoolVar(&printDownloadRoot, "print-download-root", false, "validate configuration and print the effective download root")
+	// 飞牛在开机与部分共享目录操作后会把目录权限重新应用成管理员所有，
+	// 覆盖掉本应用补上的组授权，于是 aria2 立刻失去写权限。该子命令供生命周期脚本
+	// 在运行期周期调用，只做一件事：把下载/归档目录的组授权补回去。
+	flag.BoolVar(&repairPermissions, "repair-permissions", false, "re-apply the group authorization of the download root and exit")
 	flag.BoolVar(&ensurePorts, "ensure-ports", false, "自动切换被占用的端口并持久化")
 	flag.BoolVar(&migrateConfig, "migrate-config", false, "按本版默认值迁移已有 config.json 后退出")
 	flag.BoolVar(&applyWizard, "apply-wizard", false, "把向导提交的 wizard_* 环境变量写入配置后退出")
@@ -1689,6 +1693,28 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Println(root)
+		return
+	}
+	if repairPermissions {
+		// 以 root 身份运行（由生命周期脚本调用）：只在实测不可写时才改组授权，
+		// 可写时保持静默，方便调用方据此判断是否需要记录日志。
+		var targets []string
+		if root, rootErr := effectiveDownloadRoot(cfg); rootErr == nil && root != "" {
+			targets = append(targets, root)
+		}
+		if cfg.ArchiveEnabled && cfg.ArchiveRoot != "" {
+			targets = append(targets, cfg.ArchiveRoot)
+		}
+		for _, target := range targets {
+			if probeAppWritable(target) == nil {
+				continue
+			}
+			if repairErr := ensureAppWritable(target); repairErr != nil {
+				log.Printf("重新授权目录 %s 失败: %v", target, repairErr)
+				continue
+			}
+			fmt.Printf("已重新授权目录 %s（组授权被外部重置）\n", target)
+		}
 		return
 	}
 	if secretEnv != "" {

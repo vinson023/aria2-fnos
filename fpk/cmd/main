@@ -39,6 +39,28 @@ log_startup() {
     fi
 }
 
+# 运行期权限看护：每 60 秒实测下载/归档目录对应用用户是否可写，不可写时重新授权。
+# 飞牛会在开机等时机重新应用共享目录权限，把本应用补的组授权覆盖掉；只靠启动时自愈
+# 会留下整段不可写的时间窗。看护进程随管理器退出而结束，不额外占用常驻资源。
+watch_download_permissions() {
+    watcher_manager="$1"
+    watcher_config="$2"
+    watcher_secret="$3"
+    watcher_pidfile="$4"
+    while kill -0 "$(cat "$watcher_pidfile" 2>/dev/null)" 2>/dev/null; do
+        sleep 60
+        watcher_pid=$(cat "$watcher_pidfile" 2>/dev/null) || continue
+        kill -0 "$watcher_pid" 2>/dev/null || break
+        watcher_out=$("$watcher_manager" --repair-permissions \
+            --config "$watcher_config" --secret "$watcher_secret" 2>&1) || true
+        [ -n "$watcher_out" ] || continue
+        printf '%s\n' "$watcher_out" | while IFS= read -r watcher_line; do
+            [ -n "$watcher_line" ] || continue
+            log_startup "运行期权限自愈：$watcher_line"
+        done
+    done
+}
+
 # 管理器需在应用目录创建网关 Unix Socket；仅授予专属组写权限。
 chown root:"$service_user" "$TRIM_APPDEST" 2>/dev/null || true
 chmod 775 "$TRIM_APPDEST" 2>/dev/null || true
@@ -353,6 +375,11 @@ start)
         exit 1
     fi
     log_startup "启动完成（rpc=$rpc_port bt=$listen_port dht=$dht_listen_port 下载目录=$download_root）"
+    # 运行期权限看护：飞牛在开机和部分共享目录操作后会把目录权限重新应用成管理员所有，
+    # 覆盖掉启动时补上的组授权，aria2 随即失去写权限——表现为「下载全部失败」且应用中心
+    # 的「可访问的文件」显示该目录不可用，但配置本身没有任何问题。启动时补一次不够，
+    # 这里每 2 分钟实测一次，发现被改回就重新授权（管理器以 root 运行该子命令）。
+    watch_download_permissions "$server/aria2-manager" "$config_file" "$TRIM_PKGETC/rpc.secret" "$manager_pid" &
     ;;
 stop)
     if [ -s "$config_file" ]; then cp "$config_file" "$TRIM_PKGETC/config.json" 2>/dev/null || true; fi

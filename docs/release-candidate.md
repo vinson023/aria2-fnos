@@ -2,9 +2,9 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.4`，10,644,437 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,646,580 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`9014BC41B72407C57D525DE0878EE4757105E6149A8C6A79E86C2C91EE98181F`
+- FPK 外层 SHA-256：`10FD5D4513C209FB8C396004AFD80D4F4E14EE90CF9E6B2E7D36FBE80F956FD1`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
@@ -23,8 +23,9 @@
 - Core：Aria2 1.36.0 加同一组 4 个补丁，**完全静态链接**（musl），10,739,352 B，
   SHA-256 `A482FB24722B87A0A719ACEE330E329D6DFA21075808C66202E451782812015B`
   （自 `0.1.95` 起逐字节未变）。
-- 管理器：静态 Go x86_64，7,815,328 B（`0.2.4` 重新编译，含向导配置写入与目录自动授权），
-  SHA-256 `6B561CF3183985CDAF4B84830DF38163D976879BBFF4030FB2772598D3B484B7`。
+- 管理器：静态 Go x86_64，7,819,424 B（`0.2.4` 重新编译，含向导配置写入、目录自动授权与
+  `--repair-permissions` 运行期自愈入口），
+  SHA-256 `B1587A1FE0BEEB2E6BBC550BC2692FBF26E30AE545BC9FE69BDC9F2FFAA5AFCD`。
 - 回调：静态 Go x86_64，2,793,632 B（`0.2.4` 重新编译，路径白名单纳入配置里的下载/归档根），
   SHA-256 `359DAA4A030CD503E3440854459DE17ABE48DB5865B7FE6811C242F2A775D503`。
   Go 二进制自 `0.2.4` 起带 `-ldflags="-s -w"` 构建，体积较此前版本明显下降，行为不变。
@@ -303,6 +304,7 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 | 下载目录选择器 | 安装向导不支持目录选择（仅有 7 种字段类型）。应用内 Aria2 右上角文件夹图标 →「选择并授权目录」使用飞牛 SDK 选择器：设备上 `TRIM_DATA_ACCESSIBLE_PATHS=/vol1/1000/downloads`（对应「可访问的文件」），`config.json` 的 `download_root` 同步为同一路径（对应「运行设置」） |
 | RPC 密钥修改 | `password` 类型时保存请求携带的仍是旧值（输入框已是新值），密钥实际改不掉；改为 `text` 后请求携带新值，`rpc.secret` 与 `aria2.conf` 同步更新，`startup.log` 出现「RPC 密钥已更新」 |
 | 含符号的密钥 | `Vinson@2024`（11 位、含 `@`）保存成功：请求携带该值，`rpc.secret` 与 `aria2.conf` 同步，重启后 `aria2.getVersion` 正常返回 1.36.0 |
+| 开机后目录授权 | 模拟飞牛开机重置权限（`chgrp Administrators` + 755）后，aria2 立刻失去写权限（实测 `Permission denied`）；看护脚本在 60 秒周期内重新授权，`startup.log` 记录「运行期权限自愈：... 已把目录 ... 划给专属应用组」，写入恢复 |
 | 多任务 fd 上限 | 5.20 上 14 个 BT 任务时 `aria2c` 软限制仅 1024、实际已用 1011，出现 4 个 `errorCode=15`（`No file descriptors available`）与一批 tracker `Failed to resolve the hostname ... System error`。启动脚本加 `ulimit -n 65536` 后：`/proc/<pid>/limits` 为 65536/65536，`startup.log` 记录「aria2c 文件描述符软限制已设为 65536」，14 个任务全部恢复下载，fd 用量约 870 |
 | 下载完成后归档 | 下载根改为 `/vol1/1000/downloads` 后，修复前回调报 `cleanup skipped: download path cannot be resolved`（白名单只含随包共享目录与空的 authorized_roots），文件停在下载根；修复后日志为 `archive done: /vol1/1000/downloads/COPYING -> /vol1/1000/downloads/completed/COPYING`，文件确实移入 `completed` |
 | 归档后用户可读 | 归档文件权限显示为 `rwxrwx--- aria2 AppUsers`（trimacl 以 ACL 掩码呈现组位），以 `admin`(uid 1000) 实测可读取、可在 `completed` 内创建文件 |
@@ -323,7 +325,7 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 
 | 组件 | 大小 | SHA-256 |
 |---|---|---|
-| `aria2-manager` (arm64) | 7,209,120 B | `AAB3F8F093DCDCCC37445DC5A2CA062FA265D1F2E32263FC9E8BB219D6568677` |
+| `aria2-manager` (arm64) | 7,209,120 B | `6263B6C34E3C06590FFE4352061B7FCD8D9DF8F2C79112F92B70B3BD2952C886` |
 | `aria2-hook` (arm64) | 2,687,136 B | `68CE81CD93B3BD52EE493C5B0C7F5F9588E87EB190E557F2CE3F66426D562411` |
 | `aria2c` (arm64) | 10,070,168 B | `57097DA852528679971FA2BD43EBA7DD0742F72EE7538B6FD05053CB6D048627` |
 
@@ -333,8 +335,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,430,230 B，外层 SHA-256
-`9B68923A829130678D7D9873630D9C26EC000A43990872130F8C8B082B0DD32E`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,431,960 B，外层 SHA-256
+`00E34117D1890E06D2713A575FE52E7C528757804D4B44CD47B1775E3074DE95`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，
