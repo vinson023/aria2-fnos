@@ -47,9 +47,14 @@ watch_download_permissions() {
     watcher_config="$2"
     watcher_secret="$3"
     watcher_pidfile="$4"
-    while kill -0 "$(cat "$watcher_pidfile" 2>/dev/null)" 2>/dev/null; do
+    # 绑定本次启动的管理器 PID：重启后 PID 会变，旧看护必须自行退出，
+    # 否则每次重启都多留一个循环进程。
+    watcher_owner=$(cat "$watcher_pidfile" 2>/dev/null) || return 0
+    [ -n "$watcher_owner" ] || return 0
+    while kill -0 "$watcher_owner" 2>/dev/null; do
         sleep 60
-        watcher_pid=$(cat "$watcher_pidfile" 2>/dev/null) || continue
+        watcher_pid=$(cat "$watcher_pidfile" 2>/dev/null) || break
+        [ "$watcher_pid" = "$watcher_owner" ] || break
         kill -0 "$watcher_pid" 2>/dev/null || break
         watcher_out=$("$watcher_manager" --repair-permissions \
             --config "$watcher_config" --secret "$watcher_secret" 2>&1) || true

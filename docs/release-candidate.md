@@ -2,9 +2,9 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.4`，10,646,580 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,646,662 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`10FD5D4513C209FB8C396004AFD80D4F4E14EE90CF9E6B2E7D36FBE80F956FD1`
+- FPK 外层 SHA-256：`E03B13E0121F7AEAFC253A32FAD18497D7EC8B85D959FD04501BF6F13C0551F3`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
@@ -335,8 +335,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,431,960 B，外层 SHA-256
-`00E34117D1890E06D2713A575FE52E7C528757804D4B44CD47B1775E3074DE95`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,432,061 B，外层 SHA-256
+`FB7CAA882EA5938875DFF40A381023AA51EECF86BB0E4E7AAF441B1CA39CE678`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，
