@@ -46,8 +46,9 @@ log_startup() {
 # 需要兜的是权限在应用已运行之后才被改回的情况（开机时权限服务晚于应用执行、或用户
 # 在文件管理器里改了目录权限）。一旦发生，aria2 会持续不可写，直到补回来为止。
 #
-# 检查本身约 10 毫秒：启动后 10 分钟按 10 秒一次（覆盖开机后的竞争窗口），之后降到
-# 60 秒一次。看护随管理器退出而结束，不新增常驻服务。
+# 检查本身约 10 毫秒，因此固定 15 秒一次：既能压住开机后权限服务晚到的竞争窗口，
+# 也能覆盖用户在文件管理器里手动改权限的情况。看护随管理器退出而结束，
+# 不新增常驻服务。
 watch_download_permissions() {
     watcher_manager="$1"
     watcher_config="$2"
@@ -57,15 +58,8 @@ watch_download_permissions() {
     # 否则每次重启都多留一个循环进程。
     watcher_owner=$(cat "$watcher_pidfile" 2>/dev/null) || return 0
     [ -n "$watcher_owner" ] || return 0
-    watcher_elapsed=0
     while kill -0 "$watcher_owner" 2>/dev/null; do
-        if [ "$watcher_elapsed" -lt 600 ]; then
-            watcher_interval=10
-        else
-            watcher_interval=60
-        fi
-        sleep "$watcher_interval"
-        watcher_elapsed=$((watcher_elapsed + watcher_interval))
+        sleep 15
         watcher_pid=$(cat "$watcher_pidfile" 2>/dev/null) || break
         [ "$watcher_pid" = "$watcher_owner" ] || break
         kill -0 "$watcher_pid" 2>/dev/null || break

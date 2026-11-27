@@ -2,9 +2,9 @@
 
 ## 产物
 
-- 文件：`aria2.fpk`（版本 `0.2.4`，10,646,950 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
+- 文件：`aria2.fpk`（版本 `0.2.4`，10,647,103 B；GitHub Release 中名为 `aria2-0.2.4-x86_64.fpk`）
 - 架构：x86_64（manifest 使用 `platform = x86`）
-- FPK 外层 SHA-256：`101C71E3129E98372861AB0029A11BD47754693C21F5FF692133B958D8558DBE`
+- FPK 外层 SHA-256：`ABECDB8EE51774047377C5D96D47A44C5862173CE8B67475067042AAB805C5F6`
   （仅作当次产物指纹；因 `fnpack` 元数据不稳定，溯源以下方解包清单为准）
 - 应用标识：`appname = aria2`，专属账号与组 `aria2`，开发者与发布者 `vinson023`。
   这是相对 `0.1.x` 的**破坏性改名**，应用中心按新应用处理，旧 `aria2pro` 应用不会被覆盖升级
@@ -304,7 +304,7 @@ fnOS 系统分区与应用中心本身未受影响（`5666` 仍返回 200）。
 | 下载目录选择器 | 安装向导不支持目录选择（仅有 7 种字段类型）。应用内 Aria2 右上角文件夹图标 →「选择并授权目录」使用飞牛 SDK 选择器：设备上 `TRIM_DATA_ACCESSIBLE_PATHS=/vol1/1000/downloads`（对应「可访问的文件」），`config.json` 的 `download_root` 同步为同一路径（对应「运行设置」） |
 | RPC 密钥修改 | `password` 类型时保存请求携带的仍是旧值（输入框已是新值），密钥实际改不掉；改为 `text` 后请求携带新值，`rpc.secret` 与 `aria2.conf` 同步更新，`startup.log` 出现「RPC 密钥已更新」 |
 | 含符号的密钥 | `Vinson@2024`（11 位、含 `@`）保存成功：请求携带该值，`rpc.secret` 与 `aria2.conf` 同步，重启后 `aria2.getVersion` 正常返回 1.36.0 |
-| 开机后目录授权 | 模拟飞牛开机重置权限（`chgrp Administrators` + 755）后，aria2 立刻失去写权限（实测 `Permission denied`）；看护脚本自动重新授权，三轮实测恢复耗时 8 / 7 / 7 秒，`startup.log` 记录「运行期权限自愈：...」，目录回到 `admin:aria2` 775 |
+| 开机后目录授权 | 模拟飞牛开机重置权限（`chgrp Administrators` + 755）后，aria2 立刻失去写权限（实测 `Permission denied`）；看护脚本每 15 秒复查一次并重新授权，实测恢复耗时 8 / 12 秒，`startup.log` 记录「运行期权限自愈：...」，目录回到 `admin:aria2` 775 |
 | 多任务 fd 上限 | 5.20 上 14 个 BT 任务时 `aria2c` 软限制仅 1024、实际已用 1011，出现 4 个 `errorCode=15`（`No file descriptors available`）与一批 tracker `Failed to resolve the hostname ... System error`。启动脚本加 `ulimit -n 65536` 后：`/proc/<pid>/limits` 为 65536/65536，`startup.log` 记录「aria2c 文件描述符软限制已设为 65536」，14 个任务全部恢复下载，fd 用量约 870 |
 | 下载完成后归档 | 下载根改为 `/vol1/1000/downloads` 后，修复前回调报 `cleanup skipped: download path cannot be resolved`（白名单只含随包共享目录与空的 authorized_roots），文件停在下载根；修复后日志为 `archive done: /vol1/1000/downloads/COPYING -> /vol1/1000/downloads/completed/COPYING`，文件确实移入 `completed` |
 | 归档后用户可读 | 归档文件权限显示为 `rwxrwx--- aria2 AppUsers`（trimacl 以 ACL 掩码呈现组位），以 `admin`(uid 1000) 实测可读取、可在 `completed` 内创建文件 |
@@ -335,8 +335,8 @@ ARM64 `aria2c` 静态核心由 GitHub Actions 在 `alpine:3.22` arm64 容器中�
 
 FPK 目录树由 `tools/build-arm64-fpk.py` 自动组装：复制 x86 FPK 模板，替换 Go 二进制，
 改 `manifest` 的 `platform = arm`（fnpack 1.2.3 用 `arm` 表示所有 ARM 变体包括 aarch64）。
-`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,432,439 B，外层 SHA-256
-`6F41777F21296A75D759E9C24312AB804516556FDCA56EEFFF28CF42BA46B604`）。
+`0.2.4` 产物 `aria2-0.2.4-arm64.fpk`（10,432,337 B，外层 SHA-256
+`0685279DA19DB5B24DF27E40179F22C3CA6422BE02A76BC6A3ED7033AF4808BD`）。
 
 ARM64 构建验证：
 - `aria2c`: ELF 64-bit ARM aarch64, statically linked, no NEEDED, `aria2 version 1.36.0`，
